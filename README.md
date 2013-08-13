@@ -11,18 +11,18 @@ OkCupid, Crispy Gamer, and Comcast. You can visit him at [his website](http://cw
 
 ## Contents
 
-/node_modules - all dependencies for tutorial
-/public - static directories suchs as /images
-/routes - route files for tutorial project
-/views - views for tutorial project
-README.md - this file
-app.js - central app file for tutorial project
-browsershot1.png - image for tutorial
-browsershot2.png - image for tutorial
-browsershot3.png - image for tutorial
-browsershot4.png - image for tutorial
-browsershot5.png - image for tutorial
-browsershot6.png - image for tutorial
-node_tutorial.html - the tutorial
-package.json - package info for tutorial project
-prettify.css - helps make the code snippets purdy
+* /node_modules - all dependencies for tutorial
+* /public - static directories suchs as /images
+* /routes - route files for tutorial project
+* /views - views for tutorial project
+* README.md - this file
+* app.js - central app file for tutorial project
+* browsershot1.png - image for tutorial
+* browsershot2.png - image for tutorial
+* browsershot3.png - image for tutorial
+* browsershot4.png - image for tutorial
+* browsershot5.png - image for tutorial
+* browsershot6.png - image for tutorial
+* node_tutorial.html - the tutorial
+* package.json - package info for tutorial project
+* prettify.css - helps make the code snippets purdy
