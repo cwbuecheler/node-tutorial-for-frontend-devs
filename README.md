@@ -2,6 +2,10 @@
 
 A tutorial and complete sample project for Front-End developers showing how to get Node, Express and Jade up and running, connected to MongoDB, and reading from / writing to the database.
 
+## Quickstart
+
+Double-click the Tutorial file (node_tutorial.html) and follow the instructions! The rest of the project is provided just to show the functioning finished results. The tutorial will show you how to build all of this stuff, from downloading Node all the way to the end.
+
 
 ## Author
 
