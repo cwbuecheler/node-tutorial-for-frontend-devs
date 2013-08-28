@@ -1,8 +1,8 @@
+#include <node.h>
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
 #include <v8.h>
-#include <node.h>
 #include <node_buffer.h>
 #include <cstring>
 #include <cmath>

@@ -140,16 +140,15 @@ end:
 }
 
 gss_client_response *authenticate_gss_client_clean(gss_client_state *state) {
-  OM_uint32 maj_stat;
   OM_uint32 min_stat;
   int ret = AUTH_GSS_COMPLETE;
   gss_client_response *response = NULL;
   
   if(state->context != GSS_C_NO_CONTEXT)
-    maj_stat = gss_delete_sec_context(&min_stat, &state->context, GSS_C_NO_BUFFER);
+    gss_delete_sec_context(&min_stat, &state->context, GSS_C_NO_BUFFER);
   
   if(state->server_name != GSS_C_NO_NAME)
-    maj_stat = gss_release_name(&min_stat, &state->server_name);
+    gss_release_name(&min_stat, &state->server_name);
   
   if(state->username != NULL) {
     free(state->username);
@@ -452,20 +451,19 @@ end:
 
 int authenticate_gss_server_clean(gss_server_state *state)
 {
-    OM_uint32 maj_stat;
     OM_uint32 min_stat;
     int ret = AUTH_GSS_COMPLETE;
     
     if (state->context != GSS_C_NO_CONTEXT)
-        maj_stat = gss_delete_sec_context(&min_stat, &state->context, GSS_C_NO_BUFFER);
+        gss_delete_sec_context(&min_stat, &state->context, GSS_C_NO_BUFFER);
     if (state->server_name != GSS_C_NO_NAME)
-        maj_stat = gss_release_name(&min_stat, &state->server_name);
+        gss_release_name(&min_stat, &state->server_name);
     if (state->client_name != GSS_C_NO_NAME)
-        maj_stat = gss_release_name(&min_stat, &state->client_name);
+        gss_release_name(&min_stat, &state->client_name);
     if (state->server_creds != GSS_C_NO_CREDENTIAL)
-        maj_stat = gss_release_cred(&min_stat, &state->server_creds);
+        gss_release_cred(&min_stat, &state->server_creds);
     if (state->client_creds != GSS_C_NO_CREDENTIAL)
-        maj_stat = gss_release_cred(&min_stat, &state->client_creds);
+        gss_release_cred(&min_stat, &state->client_creds);
     if (state->username != NULL)
     {
         free(state->username);
@@ -655,7 +653,7 @@ gss_client_response *gss_error(OM_uint32 err_maj, OM_uint32 err_min) {
   } while (!GSS_ERROR(maj_stat) && msg_ctx != 0);
 
   // Join the strings
-  message = calloc(1024, sizeof(1));
+  message = calloc(1026, 1);
   // Join the two messages
   sprintf(message, "%s, %s", buf_maj, buf_min);
   // Free data

@@ -17,11 +17,11 @@ exports.helloworld = function(req, res){
 /*
  * GET DB Output page
  */
-exports.dboutput = function(db) {
+exports.userlist = function(db) {
 	return function(req, res) {
 		var collection = db.get('nodetest1');
 		collection.find({},{},function(e,docs){
-			res.render('dboutput', {
+			res.render('userlist', {
 				"userlist" : docs
 			});
 		});
@@ -31,14 +31,14 @@ exports.dboutput = function(db) {
 /*
  * GET DB Input page
  */
-exports.dbinput = function(req, res){
-  res.render('dbinput', { title: 'Add User' });
+exports.newuser = function(req, res){
+  res.render('newuser', { title: 'Add New User' });
 };
 
 /*
  * POST form
  */
-exports.postform = function(db) {
+exports.adduser = function(db) {
 	return function(req, res) {
 
 		// Get our form values. These rely on the "name" attributes
@@ -59,9 +59,9 @@ exports.postform = function(db) {
 			}
 			else {
 				// If it worked, forward to success page 
-				res.redirect("dboutput");
-				// And set the header so the address bar doesn't still say /postform
-				res.location("dboutput");
+				res.redirect("userlist");
+				// And set the header so the address bar doesn't still say /adduser
+				res.location("userlist");
 			}
 		});
 

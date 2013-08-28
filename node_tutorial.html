@@ -276,7 +276,7 @@ C:\node>express --sessions nodetest1
         "start": "node app.js"
     },
     "dependencies": {
-        "express": "3.3.4",
+        "express": "3.3.6",
         "jade": "*"
     }
 }
@@ -290,9 +290,9 @@ C:\node>express --sessions nodetest1
 
 <pre class="prettyprint">
 "dependencies": {
-    "express": "3.3.4",
+    "express": "3.3.6",
     "jade": "*",
-    "mongodb": "1.3.15",
+    "mongodb": "1.3.19",
     "monk": "0.7.1"
 }
 </pre>
@@ -369,11 +369,11 @@ Express server listening on port 3000
 
 <h5>C:\node\nodetest1\app.js</h5>
 <pre class="prettyprint">
-var express = require('express')
-  , routes = require('./routes')
-  , user = require('./routes/user')
-  , http = require('http')
-  , path = require('path');
+var express = require('express');
+var routes = require('./routes');
+var user = require('./routes/user');
+var http = require('http');
+var path = require('path');
 </pre>
 
 <p>
@@ -501,7 +501,7 @@ exports.index = function(req, res){
 
 <p>
     Pretty sparse, right? Let's add that new page. My preferred approach is to
-    add a new router file per top-level directory, but we're not creating a
+    add a new route file per top-level directory, but we're not creating a
     whole new helloworld directory under /views, so we're just using the index
     route. At the bottom of the file, add this code:
 </p>
@@ -537,7 +537,7 @@ block content
     This is pretty straightforward. It uses ("extends") the file layout.jade
     as a template, and then within the content block defined in the layout
     file, it sticks a header and a paragraph. Note the use of the "title"
-    variable which we set above, in our index.js router. This means we don't
+    variable which we set above, in our index.js route. This means we don't
     even have to change the text at all in order for it to show different
     stuff from the home page. But let's change it anyway to:
 </p>
@@ -557,7 +557,14 @@ node app.js
 </pre>
 
 <p>
-    In order to restart the server. Now navigate to
+    In order to restart the server. By the way, this seems a good time to
+    mention: changes to Jade templates do not require a server restart, but
+    basically whenever you change a js file, such as app.js or the route
+    files, you'll need to restart to see changes.
+</p>
+
+<p>
+    SO &hellip; with the server restarted, navigate to
     <a href="http://localhost:3000/helloworld" title="Hello World on Localhost" target="_blank">http://localhost:3000/helloworld</a>
     and enjoy the completely asinine text that gets displayed:
 </p>
@@ -683,7 +690,7 @@ use nodetest1
 
 <h5>Mongo Console</h5>
 <pre class="prettyprint">
-"nodetest1" : {
+{
     "_id" : 1234,
     "username" : "cwbuecheler",
     "email" : "cwbuecheler@nospam.com"
@@ -807,42 +814,29 @@ db.nodetest1.insert(newstuff);
 
 <h5>C:\node\nodetest1\app.js</h5>
 <pre class="prettyprint">
-var express = require('express')
-  , routes = require('./routes')
-  , user = require('./routes/user')
-  , http = require('http')
-  , path = require('path');
-</pre>
-
-<p>
-    Note: some versions of Express seem to define each of these variables
-    individually, like this:
-</p>
-
-<h5>C:\node\nodetest1\app.js</h5>
-<pre class="prettyprint">
 var express = require('express');
 var routes = require('./routes');
+var user = require('./routes/user');
+var http = require('http');
+var path = require('path');
 </pre>
 
-<p>
-    &hellip; etc. That's fine. You can either use the whole code snippet below,
-    or you can adjust it to match the above. They're both doing the exact
-    same thing. It's just whether you want to have "var, var, var" or not.
 <p>
     Now add these three lines:
 </p>
 
 <h5>C:\node\nodetest1\app.js</h5>
 <pre class="prettyprint">
-var express = require('express')
-  , routes = require('./routes')
-  , user = require('./routes/user')
-  , http = require('http')
-  , path = require('path')
-  , mongo = require('mongodb')
-  , monk = require('monk')
-  , db = monk('localhost:27017/nodetest1');
+var express = require('express');
+var routes = require('./routes');
+var user = require('./routes/user');
+var http = require('http');
+var path = require('path');
+
+// New Code
+var mongo = require('mongodb');
+var monk = require('monk');
+var db = monk('localhost:27017/nodetest1');
 </pre>
 
 <p>
@@ -866,13 +860,13 @@ app.get('/helloworld', routes.helloworld);
 
 <h5>C:\node\nodetest1\app.js</h5>
 <pre class="prettyprint">
-app.get('/dboutput', routes.dboutput(db));
+app.get('/userlist', routes.userlist(db));
 </pre>
 
 <p>
-    This line says that when a user navigates to /dboutput, we should pass
-    the "db" variable (our database object) to the dboutput route. But we
-    don't HAVE a dboutput route yet, so it's time to create one.
+    This line says that when a user navigates to /userlist, we should pass
+    the "db" variable (our database object) to the userlist route. But we
+    don't HAVE a userlist route yet, so it's time to create one.
 </p>
 
 <h4>Step 4 &ndash; Pull your data from Mongo and display it</h4>
@@ -884,11 +878,11 @@ app.get('/dboutput', routes.dboutput(db));
 
 <h5>C:\node\nodetest1\routes\index.js</h5>
 <pre class="prettyprint">
-exports.dboutput = function(db) {
+exports.userlist = function(db) {
     return function(req, res) {
         var collection = db.get('nodetest1');
         collection.find({},{},function(e,docs){
-            res.render('dboutput', {
+            res.render('userlist', {
                 "userlist" : docs
             });
         });
@@ -902,7 +896,7 @@ exports.dboutput = function(db) {
     and then doing a page render just like the other two "exports" in this
     route file. We then tell it which collection we want to use ('nodetest1')
     and do a find, then return the results as the variable "docs". Once
-    we have those documents, we then do a render of dboutput (which will
+    we have those documents, we then do a render of userlist (which will
     need a corresponding Jade template), giving it the userlist variable
     to work with, and passing our database documents to that variable.
 </p>
@@ -910,10 +904,10 @@ exports.dboutput = function(db) {
 <p>
     Next let's set up our Jade template. Navigate to C:\node\nodetest1\views\
     and open index.jade. Once again, <strong>immediately save it as
-    dboutput.jade</strong>. Then edit the HTML so it looks like this:
+    userlist.jade</strong>. Then edit the HTML so it looks like this:
 </p>
 
-<h5>C:\node\nodetest1\view\dboutput.jade</h5>
+<h5>C:\node\nodetest1\view\userlist.jade</h5>
 <pre class="prettyprint">
 extends layout
 
@@ -928,7 +922,7 @@ block content
 
 <p>
     This is saying that we're going to pull in the set of documents we just
-    called userlist over in the router file, and then for each entry (named 
+    called userlist over in the route file, and then for each entry (named 
     'user' during the loop), get the email and username values from the object
     and put them into our html. We've also got the count &ndash; i &ndash;
     handy in case we need it, though in this instance we don't.
@@ -949,7 +943,7 @@ C:\node\nodetest1>node app.js
 
 <p>
 Now open your browser and head to
-<a href="http://localhost:3000/dboutput" title="Localhost DB Output Page" target="_blank">http://localhost:3000/dboutput</a>
+<a href="http://localhost:3000/userlist" title="Localhost DB Output Page" target="_blank">http://localhost:3000/userlist</a>
 and marvel in the results.
 </p>
 
@@ -963,9 +957,9 @@ You're now pulling data from the DB and spitting it out onto a web page. Nice!
 <p>
     There one more thing I badly wanted to cover in this tutorial, but because
     it's already about as long as the Bible, I'm going to breeze through it
-    here. You could very easily change your dboutput view from an
-    Express-driven web page complete with Jade template to a simple blast of
-    JSON. You could then access this with AJAX and manipulate it on the
+    here. You could very easily change your userlist view from an
+    Express-driven web page complete with Jade template to a plain old JSON
+    response. You could then access this with AJAX and manipulate it on the
     client-side, with jQuery for example, instead of on the server side. I
     won't object if that's the way you want to go, but I can't cover it here,
     so I'll just point you to
@@ -993,51 +987,14 @@ You're now pulling data from the DB and spitting it out onto a web page. Nice!
 
 <p>
     We're going quick and dirty here: two ugly, unstyled text inputs and a
-    submit button. 1996-style. Open up /views/index.jade, save it as
-    dbinput.jade, and replace the whole file contents with this:
+    submit button. 1996-style. Just like before, we'll start with app.get();
+    and then give it something to get. Open up app.js and find the part with
+    all of those app.get() calls, and add this to the bottom of them:
 </p>
-
-<h5>C:\node\nodetest1\views\dbinput.jade</h5>
-<pre class="prettyprint">
-extends layout
-
-block content
-    h1= title
-    form#formAddUser(name="adduser",method="post",action="/postform")
-        input#userName(type="text", placeholder="username", name="username")
-        input#userEmail(type="text", placeholder="useremail", name="useremail")
-        button#submit(type="submit") submit
-</pre>
-
-<p>
-    Here we're creating a form with the ID "formAddUser" (I like to preface
-    my IDs with the type of thing we're ID'ing. It's a personal quirk). Method
-    is post, action is postform. Pretty straightforward. Under that we've
-    defined our two inputs and our button.
-</p>
-
-<p>
-    As with all templates, we need to adjust the router to know that they're
-    there. Open up /routes/index.js and add the following:
-</p>
-
-<h5>C:\node\nodetest1\routes\index.js</h5>
-<pre class="prettyprint">
-exports.dbinput = function(req, res){
-  res.render('dbinput', { title: 'Add User' });
-};
-</pre>
-
-<p>
-    And as with all routes, we need to tell app.js about them, so open that
-    guy up. Find the part with all of those app.get() calls, and add this to
-    the bottom of them:
-</p>
-
 
 <h5>C:\node\nodetest1\app.js</h5>
 <pre class="prettyprint">
-app.get('/dbinput', routes.dbinput);
+app.get('/newuser', routes.newuser);
 </pre>
 
 <p>
@@ -1049,24 +1006,93 @@ app.get('/dbinput', routes.dbinput);
 app.get('/', routes.index);
 app.get('/users', user.list);
 app.get('/helloworld', routes.helloworld);
-app.get('/dboutput', routes.dboutput(db));
-app.get('/dbinput', routes.dbinput);
+app.get('/userlist', routes.userlist(db));
+
+// New Code
+app.get('/newuser', routes.newuser);
 </pre>
 
 <p>
+    As with all app.get requests, we need to adjust the route to know what to
+    serve up. Open up /routes/index.js and add the following:
+</p>
+
+<h5>C:\node\nodetest1\routes\index.js</h5>
+<pre class="prettyprint">
+exports.newuser = function(req, res){
+  res.render('newuser', { title: 'Add New User' });
+};
+</pre>
+
+<p>
+    Now we just need a template. Open up /views/index.jade, save it as
+    newuser.jade, and replace the whole file contents with this:
+</p>
+
+<h5>C:\node\nodetest1\views\newuser.jade</h5>
+<pre class="prettyprint">
+extends layout
+
+block content
+    h1= title
+    form#formAddUser(name="adduser",method="post",action="/adduser")
+        input#inputUserName(type="text", placeholder="username", name="username")
+        input#inputUserEmail(type="text", placeholder="useremail", name="useremail")
+        button#btnSubmit(type="submit") submit
+</pre>
+
+<p>
+    Here we're creating a form with the ID "formAddUser" (I like to preface
+    my IDs with the type of thing we're ID'ing. It's a personal quirk). Method
+    is post, action is adduser. Pretty straightforward. Under that we've
+    defined our two inputs and our button.
+</p>
+
+<p>
     If you restart your node server and go to
-    <a href="http://localhost:3000/dbinput" title="Localhost DB Input Page" target="_blank">http://localhost:3000/dbinput</a>
+    <a href="http://localhost:3000/newuser" title="Localhost DB Input Page" target="_blank">http://localhost:3000/newuser</a>
     you'll see your form in all its glory.
 </p>
 
 <p class="browsershot"><img src="browsershot4.png" alt="Welcome to Express Page" /></p>
 
 <p>
-    Go ahead and submit. Enjoy the "can't post to /postform" error. We're about
+    Go ahead and submit. Enjoy the "can't post to /adduser" error. We're about
     to fix that.
 </p>
 
 <h4>Step 2 &ndash; Create your DB functions</h4>
+
+<p>
+    OK, same process as before. First we edit app.js, then our route file, and
+    then our Jade template. Except there's no Jade template here because we're
+    posting and then forwarding. See below. It'll all make sense! Let's start:
+    Open app.js and once again find your stack of app.get calls:
+</p>
+
+<h5>C:\node\nodetest1\app.js</h5>
+<pre class="prettyprint">
+app.get('/', routes.index);
+app.get('/users', user.list);
+app.get('/helloworld', routes.helloworld);
+app.get('/userlist', routes.userlist(db));
+app.get('/newuser', routes.newuser);
+</pre>
+
+<p>
+    Now add the following at the bottom of the list:
+</p>
+
+<h5>C:\node\nodetest1\app.js</h5>
+<pre class="prettyprint">
+app.post('/adduser', routes.adduser(db));
+</pre>
+
+<p>
+    Note that that's an app.post, not an app.get. If you want to separate
+    it from the app.gets with a comment or newline, I won't stop you. Let's
+    set up our route.
+</p>
 
 <p>
     Go back to /routes/index.js and let's create our insertion function. This
@@ -1075,7 +1101,7 @@ app.get('/dbinput', routes.dbinput);
 
 <h5>C:\node\nodetest1\routes\index.js</h5>
 <pre class="prettyprint">
-exports.postform = function(db) {
+exports.adduser = function(db) {
     return function(req, res) {
 
         // Get our form values. These rely on the "name" attributes
@@ -1096,9 +1122,9 @@ exports.postform = function(db) {
             }
             else {
                 // If it worked, forward to success page 
-                res.redirect("dboutput");
-                // And set the header so the address bar doesn't still say /postform
-                res.location("dboutput");
+                res.redirect("userlist");
+                // And set the header so the address bar doesn't still say /adduser
+                res.location("userlist");
             }
         });
 
@@ -1111,39 +1137,13 @@ exports.postform = function(db) {
     error-checking, and the like. You'd want to check for duplicate usernames
     and emails, for example. And to vet that the email address at least looks
     like a legit entry. But this'll work for now. As you can see, on
-    successfully adding to the DB, we forward the user back to the dboutput
+    successfully adding to the DB, we forward the user back to the userlist
     page, where they should see their newly added user.
 </p>
 
 <p>
     Are there smoother ways to do this? Absolutely. We're staying as
-    bare-bones as possible here. Only thing left to do now is edit app.js
-    to be aware of our postform route. Open app.js and once again find your
-    stock of app.get calls:
-</p>
-
-<h5>C:\node\nodetest1\app.js</h5>
-<pre class="prettyprint">
-app.get('/', routes.index);
-app.get('/users', user.list);
-app.get('/helloworld', routes.helloworld);
-app.get('/dboutput', routes.dboutput(db));
-app.get('/dbinput', routes.dbinput);
-</pre>
-
-<p>
-    Now add the following at the bottom of the list:
-</p>
-
-<h5>C:\node\nodetest1\app.js</h5>
-<pre class="prettyprint">
-app.post('/postform', routes.postform(db));
-</pre>
-
-<p>
-    Note that that's an app.post, not an app.get. If you want to separate
-    it from the app.gets with a comment or newline, I won't stop you. Now,
-    let's go add some data!
+    bare-bones as possible here. Now, let's go add some data!
 </p>
 
 <h4>Step 4 &ndash; Connect and add data to your DB</h4>
@@ -1161,7 +1161,7 @@ C:\node\nodetest1>node app.js
 <p>
     Assuming your server is running, which it should be, return to your web
     browser and point it at
-    <a href="http://localhost:3000/dbinput" title="Localhost DB Input Page" target="_blank">http://localhost:3000/dbinput</a>
+    <a href="http://localhost:3000/newuser" title="Localhost DB Input Page" target="_blank">http://localhost:3000/newuser</a>
     again. There's our exciting form, just like before. Except now let's fill
     in some values before we hit submit. I went with username "noderocks" and
     email "noderocks@rockingnode.com" ... you can go with whatever you'd like.
@@ -1170,7 +1170,7 @@ C:\node\nodetest1>node app.js
 <p class="browsershot"><img src="browsershot5.png" alt="Welcome to Express Page" /></p>
 
 <p>
-    Click submit, and check it out ... we're back at /dboutput and there's
+    Click submit, and check it out ... we're back at /userlist and there's
     our new entry!
 </p>
 

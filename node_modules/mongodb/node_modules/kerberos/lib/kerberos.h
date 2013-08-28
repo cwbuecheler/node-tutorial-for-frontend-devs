@@ -1,11 +1,11 @@
 #ifndef KERBEROS_H
 #define KERBEROS_H
 
+#include <node.h>
 #include <gssapi/gssapi.h>
 #include <gssapi/gssapi_generic.h>
 #include <gssapi/gssapi_krb5.h>
 
-#include <node.h>
 #include <node_object_wrap.h>
 #include <v8.h>
 
