@@ -609,7 +609,7 @@ makeup.
     C:\mongodb for now). From that directory, type the following:
 </p>
 
-<h5>Command C:\mongo></h5>
+<h5>Command C:\mongo\</h5>
 <pre class="prettyprint">
 mongod --dbpath c:\node\nodetest1\data
 </pre>
@@ -624,7 +624,7 @@ mongod --dbpath c:\node\nodetest1\data
     type:
 </p>
 
-<h5>Command C:\mongo></h5>
+<h5>Command C:\mongo\</h5>
 <pre class="prettyprint">
 mongo
 </pre>
@@ -649,15 +649,15 @@ connecting to: test
     needed for that.
 </p>
 
-<h4>Step 2 &ndash; Create a Collection</h4>
+<h4>Step 3 &ndash; Create a Database</h4>
 
 <p>
 
     Don't worry about "connecting to: test" &hellip; that's just the default
-    collection Mongo decides to use if you don't specify one on the command
+    database Mongo decides to use if you don't specify one on the command
     line, which we didn't because it's not important right now. It doesn't
-    actually even create the "test" collection unless you add a record. It'd
-    be totally fine to just work in that collection for right now, but let's
+    actually even create the "test" database unless you add a record. It'd
+    be totally fine to just work in that database for right now, but let's
     make one of our own. In your Mongo console, type the following:
 </p>
 
@@ -667,13 +667,13 @@ use nodetest1
 </pre>
 
 <p>
-    Now we're using the collection "nodetest1." Like with "test", nothing
-    actually exists yet. To make the collection exist, we have to add some
+    Now we're using the database "nodetest1." Like with "test", nothing
+    actually exists yet. To make the database exist, we have to add some
     data. We're going to start off by doing that right inside of the Mongo
     client.
 </p>
 
-<h4>Step 3 &ndash; Add some Data</h4>
+<h4>Step 4 &ndash; Add some Data</h4>
 
 <p>
     My favorite thing about MongoDB is that it uses JSON for its structure,
@@ -706,17 +706,22 @@ use nodetest1
 
 <h5>Mongo Console</h5>
 <pre class="prettyprint">
-db.nodetest1.insert({ "username" : "testuser1", "email" : "testuser1@testdomain.com" })
+db.usercollection.insert({ "username" : "testuser1", "email" : "testuser1@testdomain.com" })
 </pre>
 
 <p>
-    Hit enter. Assuming everything went right, you should see &hellip;
-    nothing. That's not very exciting, so type this:
+    Something important to note here: that "db" stands for our database, which
+    as mentioned above we've defined as "nodetest1". The "usercollection" part
+    is our collection. Note that there wasn't a step where we created the
+    "usercollection" collection. That's because the first time we add to it,
+    it's going to be auto-created. Handy. OK, Hit enter. Assuming everything
+    went right, you should see &hellip; nothing. That's not very exciting, so
+    type this:
 </p>
 
 <h5>Mongo Console</h5>
 <pre class="prettyprint">
-    db.nodetest1.find().pretty()
+    db.usercollection.find().pretty()
 </pre>
 
 <p>
@@ -754,13 +759,13 @@ db.nodetest1.insert({ "username" : "testuser1", "email" : "testuser1@testdomain.
 <h5>Mongo Console</h5>
 <pre class="prettyprint">
 newstuff = [{ "username" : "testuser2", "email" : "testuser2@testdomain.com" }, { "username" : "testuser3", "email" : "testuser3@testdomain.com" }]
-db.nodetest1.insert(newstuff);
+db.usercollection.insert(newstuff);
 </pre>
 
 <p>
     Note that, yes, we can pass an array with multiple objects to our
-    collection. Handy! Another use of db.nodetest1.find().pretty() will show
-    all three records:
+    collection. Handy! Another use of db.usercollection.find().pretty() will
+    show all three records:
 </p>
 
 <h5>Mongo Console</h5>
@@ -787,7 +792,7 @@ db.nodetest1.insert(newstuff);
     that we set up earlier.
 </p>
 
-<h4>Step 3 &ndash; Hook Mongo up to Node</h4>
+<h4>Step 5 &ndash; Hook Mongo up to Node</h4>
 
 <p>
     This is where the rubber meets the road. Let's start by building a page
@@ -869,7 +874,7 @@ app.get('/userlist', routes.userlist(db));
     don't HAVE a userlist route yet, so it's time to create one.
 </p>
 
-<h4>Step 4 &ndash; Pull your data from Mongo and display it</h4>
+<h4>Step 6 &ndash; Pull your data from Mongo and display it</h4>
 
 <p>
     Open up C:\node\nodetest1\routes\index.js in your editor. It's still got
@@ -880,7 +885,7 @@ app.get('/userlist', routes.userlist(db));
 <pre class="prettyprint">
 exports.userlist = function(db) {
     return function(req, res) {
-        var collection = db.get('nodetest1');
+        var collection = db.get('usercollection');
         collection.find({},{},function(e,docs){
             res.render('userlist', {
                 "userlist" : docs
@@ -894,11 +899,12 @@ exports.userlist = function(db) {
     OK &hellip; that's getting fairly complicated. All it's really doing,
     though, is running a wrapper function to which we pass our db variable,
     and then doing a page render just like the other two "exports" in this
-    route file. We then tell it which collection we want to use ('nodetest1')
-    and do a find, then return the results as the variable "docs". Once
-    we have those documents, we then do a render of userlist (which will
-    need a corresponding Jade template), giving it the userlist variable
-    to work with, and passing our database documents to that variable.
+    route file. We then tell it which collection we want to use
+    ('usercollection') and do a find, then return the results as the variable
+    "docs". Once we have those documents, we then do a render of userlist
+    (which will need a corresponding Jade template), giving it the userlist
+    variable to work with, and passing our database documents to that
+    variable.
 </p>
 
 <p>
@@ -922,7 +928,7 @@ block content
 
 <p>
     This is saying that we're going to pull in the set of documents we just
-    called userlist over in the route file, and then for each entry (named 
+    called userlist over in the route file, and then for each entry (named
     'user' during the loop), get the email and username values from the object
     and put them into our html. We've also got the count &ndash; i &ndash;
     handy in case we need it, though in this instance we don't.
@@ -936,7 +942,7 @@ block content
     type:
 </p>
 
-<h5>Command C:\node\nodetest1></h5>
+<h5>Command C:\node\nodetest1\</h5>
 <pre class="prettyprint">
 C:\node\nodetest1>node app.js
 </pre>
@@ -998,7 +1004,7 @@ app.get('/newuser', routes.newuser);
 </pre>
 
 <p>
-    So that you get: 
+    So that you get:
 </p>
 
 <h5>C:\node\nodetest1\app.js</h5>
@@ -1107,9 +1113,9 @@ exports.adduser = function(db) {
         // Get our form values. These rely on the "name" attributes
         var userName = req.body.username;
         var userEmail = req.body.useremail;
-        
+
         // Set our collection
-        var collection = db.get('nodetest1');
+        var collection = db.get('usercollection');
 
         // Submit to the DB
         collection.insert({
@@ -1121,7 +1127,7 @@ exports.adduser = function(db) {
                 res.send("There was a problem adding the information to the database.");
             }
             else {
-                // If it worked, forward to success page 
+                // If it worked, forward to success page
                 res.redirect("userlist");
                 // And set the header so the address bar doesn't still say /adduser
                 res.location("userlist");

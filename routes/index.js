@@ -19,7 +19,7 @@ exports.helloworld = function(req, res){
  */
 exports.userlist = function(db) {
 	return function(req, res) {
-		var collection = db.get('nodetest1');
+		var collection = db.get('usercollection');
 		collection.find({},{},function(e,docs){
 			res.render('userlist', {
 				"userlist" : docs
@@ -46,7 +46,7 @@ exports.adduser = function(db) {
 		var userEmail = req.body.useremail;
 
 		// Set our collection
-		var collection = db.get('nodetest1');
+		var collection = db.get('usercollection');
 
 		// Submit to the DB
 		collection.insert({
