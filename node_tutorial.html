@@ -276,7 +276,7 @@ C:\node>express --sessions nodetest1
         "start": "node app.js"
     },
     "dependencies": {
-        "express": "3.3.6",
+        "express": "3.4.4",
         "jade": "*"
     }
 }
@@ -290,10 +290,10 @@ C:\node>express --sessions nodetest1
 
 <pre class="prettyprint">
 "dependencies": {
-    "express": "3.3.6",
+    "express": "3.4.4",
     "jade": "*",
-    "mongodb": "1.3.19",
-    "monk": "0.7.1"
+    "mongodb": "*",
+    "monk": "*"
 }
 </pre>
 
@@ -301,9 +301,9 @@ C:\node>express --sessions nodetest1
 <h4>Step 5 &ndash; Install Dependencies</h4>
 
 <p>
-Now we're ready to go. Note that those version numbers might be out of date by
-the time you read this article. You can check them from your command prompt
-with "npm info [dependency] version" (eg: npm info mongodb version).
+Now we've defined our dependencies and we're ready to go. Note that the
+asterisks tell NPM "just get the latest version" when you run the install,
+which we're about to do.
 </p>
 
 <p>
@@ -403,14 +403,12 @@ var app = express();
 <pre class="prettyprint">
 // all environments
 app.set('port', process.env.PORT || 3000);
-app.set('views', __dirname + '/views');
+app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'jade');
 app.use(express.favicon());
 app.use(express.logger('dev'));
 app.use(express.bodyParser());
 app.use(express.methodOverride());
-app.use(express.cookieParser('your secret here'));
-app.use(express.session());
 app.use(app.router);
 app.use(express.static(path.join(__dirname, 'public')));
 </pre>
@@ -423,6 +421,29 @@ app.use(express.static(path.join(__dirname, 'public')));
     they're coming from the top level. For example, the images directory is
     c:\node\nodetest1\public\images &hellip; but it is accessed at
     <a href="http://localhost:3000/images" title="Localhost Images directory" target="_blank">http://localhost:3000/images</a>
+</p>
+
+<p><strong>NOTE:</strong> you will need to change this line:
+
+<h5>C:\node\nodetest1\app.js</h5>
+<pre class="prettyprint">
+    app.use(express.bodyParser());
+</pre>
+
+<p>
+    to:
+</p>
+
+<h5>C:\node\nodetest1\app.js</h5>
+<pre class="prettyprint">
+    app.use(express.urlencoded());
+</pre>
+
+<p>
+    In order to avoid some warnings in your Node console when you run your
+    app. This is due to some upcoming changes in Express and its plugins. If
+    you don't make this change, your app will still run, but you'll see text
+    about upcoming deprications every time you run it.
 </p>
 
 <h5>C:\node\nodetest1\app.js</h5>
