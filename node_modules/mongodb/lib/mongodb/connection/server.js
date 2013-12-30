@@ -4,6 +4,7 @@ var Connection = require('./connection').Connection,
   MongoReply = require('../responses/mongo_reply').MongoReply,
   ConnectionPool = require('./connection_pool').ConnectionPool,
   EventEmitter = require('events').EventEmitter,
+  ServerCapabilities = require('./server_capabilities').ServerCapabilities,
   Base = require('./base').Base,
   format = require('util').format,
   utils = require('../utils'),
@@ -74,6 +75,8 @@ function Server(host, port, options) {
   this.sslKey = this.options.sslKey;
   // Password to unlock private key
   this.sslPass = this.options.sslPass;
+  // Server capabilities
+  this.serverCapabilities = null;
   // Set server name
   this.name = format("%s:%s", host, port);
 
@@ -136,6 +139,10 @@ function Server(host, port, options) {
   this._state = {'runtimeStats': {'queryStats':new RunningStats()}};
   // Do we record server stats or not
   this.recordQueryStats = false;
+
+  // Allow setting the socketTimeoutMS on all connections
+  // to work around issues such as secondaries blocking due to compaction
+  utils.setSocketTimeoutProperty(this, this.socketOptions);
 };
 
 /**
@@ -194,6 +201,9 @@ Server.prototype.close = function(callback) {
     processor(function() {
       self._emitAcrossAllDbInstances(self, null, "close", null, null, true)
     })
+
+    // Flush out any remaining call handlers
+    self._flushAllCallHandlers(utils.toError("Connection Closed By Application"));
   }
 
   // Peform callback if present
@@ -375,6 +385,9 @@ Server.prototype.connect = function(dbInstance, options, callback) {
         _server._emitAcrossAllDbInstances(_server, eventReceiver, "reconnect", null, returnIsMasterResults ? reply : null, null);        
       }
 
+      // Set server capabilities
+      server.serverCapabilities = new ServerCapabilities(_server.isMasterDoc);      
+
       // If we have it set to returnIsMasterResults
       if(returnIsMasterResults) {
         internalCallback(null, reply, _server);
@@ -443,17 +456,17 @@ Server.prototype.connect = function(dbInstance, options, callback) {
               var internalCallback = callback;
               callback = null;
               // Perform callback
-              internalCallback(new Error("connection closed due to parseError"), null, server);
+              internalCallback(err, null, server);
             } else if(server.isSetMember()) {
-              if(server.listeners("parseError") && server.listeners("parseError").length > 0) server.emit("parseError", new Error("connection closed due to parseError"), server);
+              if(server.listeners("parseError") && server.listeners("parseError").length > 0) server.emit("parseError", utils.toError(err), server);
             } else {
-              if(eventReceiver.listeners("parseError") && eventReceiver.listeners("parseError").length > 0) eventReceiver.emit("parseError", new Error("connection closed due to parseError"), server);
+              if(eventReceiver.listeners("parseError") && eventReceiver.listeners("parseError").length > 0) eventReceiver.emit("parseError", utils.toError(err), server);
             }
 
             // If we are a single server connection fire errors correctly
             if(!server.isSetMember()) {
               // Fire all callback errors
-              server.__executeAllCallbacksWithError(new Error("connection closed due to parseError"));
+              server.__executeAllCallbacksWithError(err);
               // Emit error
               server._emitAcrossAllDbInstances(server, eventReceiver, "parseError", server, null, true);
             }
@@ -655,7 +668,7 @@ Server.prototype.connect = function(dbInstance, options, callback) {
 
   // If we have a parser error we are in an unknown state, close everything and emit
   // error
-  connectionPool.on("parseError", function(message) {
+  connectionPool.on("parseError", function(err) {
     // If pool connection is already closed
     if(server._serverState === 'disconnected' 
       || server._serverState === 'destroyed') return;
@@ -667,17 +680,17 @@ Server.prototype.connect = function(dbInstance, options, callback) {
       var internalCallback = callback;
       callback = null;
       // Perform callback
-      internalCallback(new Error("connection closed due to parseError"), null, server);
+      internalCallback(utils.toError(err), null, server);
     } else if(server.isSetMember()) {
-      if(server.listeners("parseError") && server.listeners("parseError").length > 0) server.emit("parseError", new Error("connection closed due to parseError"), server);
+      if(server.listeners("parseError") && server.listeners("parseError").length > 0) server.emit("parseError", utils.toError(err), server);
     } else {
-      if(eventReceiver.listeners("parseError") && eventReceiver.listeners("parseError").length > 0) eventReceiver.emit("parseError", new Error("connection closed due to parseError"), server);
+      if(eventReceiver.listeners("parseError") && eventReceiver.listeners("parseError").length > 0) eventReceiver.emit("parseError", utils.toError(err), server);
     }
 
     // If we are a single server connection fire errors correctly
     if(!server.isSetMember()) {
       // Fire all callback errors
-      server.__executeAllCallbacksWithError(new Error("connection closed due to parseError"));
+      server.__executeAllCallbacksWithError(utils.toError(err));
       // Emit error
       server._emitAcrossAllDbInstances(server, eventReceiver, "parseError", server, null, true);
     }
@@ -691,7 +704,7 @@ Server.prototype.connect = function(dbInstance, options, callback) {
  * @ignore
  */
 Server.prototype.allRawConnections = function() {
-  return this.connectionPool.getAllConnections();
+  return this.connectionPool != null ? this.connectionPool.getAllConnections() : [];
 }
 
 /**
@@ -723,7 +736,11 @@ Server.prototype.checkoutWriter = function(read) {
   var result = canCheckoutWriter(this, read);
   // If the result is null check out a writer
   if(result == null && this.connectionPool != null) {
-    return this.connectionPool.checkoutConnection();
+    var connection = this.connectionPool.checkoutConnection();
+    // Add server capabilities to the connection
+    if(connection)
+      connection.serverCapabilities = this.serverCapabilities;
+    return connection;
   } else if(result == null) {
     return null;
   } else {
@@ -762,7 +779,11 @@ Server.prototype.checkoutReader = function(read) {
   var result = canCheckoutReader(this);
   // If the result is null check out a writer
   if(result == null && this.connectionPool != null) {
-    return this.connectionPool.checkoutConnection();
+    var connection = this.connectionPool.checkoutConnection();
+    // Add server capabilities to the connection
+    if(connection)
+      connection.serverCapabilities = this.serverCapabilities;
+    return connection;
   } else if(result == null) {
     return null;
   } else {

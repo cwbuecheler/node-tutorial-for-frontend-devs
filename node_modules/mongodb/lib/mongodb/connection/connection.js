@@ -7,6 +7,7 @@ var utils = require('./connection_utils'),
   tls = require('tls');
 
 var Connection = exports.Connection = function(id, socketOptions) {
+  var self = this;
   // Set up event emitter
   EventEmitter.call(this);
   // Store all socket options
@@ -19,6 +20,10 @@ var Connection = exports.Connection = function(id, socketOptions) {
   this.connected = false;
   // Set if this is a domain socket
   this.domainSocket = this.socketOptions.domainSocket;
+
+  // Supported min and max wire protocol
+  this.minWireVersion = 0;
+  this.maxWireVersion = 2;
 
   //
   // Connection parsing state
@@ -44,7 +49,20 @@ var Connection = exports.Connection = function(id, socketOptions) {
       disableDriverBSONSizeCheck: this.socketOptions['disableDriverBSONSizeCheck'] || false
     , maxBsonSize: this.maxBsonSize
     , maxMessageSizeBytes: this.maxMessageSizeBytes
-  }  
+  }
+
+  // Allow setting the socketTimeoutMS on all connections
+  // to work around issues such as secondaries blocking due to compaction
+  Object.defineProperty(this, "socketTimeoutMS", {
+      enumerable: true
+    , get: function () { return self.socketOptions.socketTimeoutMS; }
+    , set: function (value) { 
+      // Set the socket timeoutMS value
+      self.socketOptions.socketTimeoutMS = value;
+      // Set the physical connection timeout
+      self.connection.setTimeout(self.socketOptions.socketTimeoutMS);
+    }
+  });  
 }
 
 // Set max bson size
@@ -69,6 +87,7 @@ Connection.prototype.start = function() {
     if(this.logger != null && this.logger.doDebug){
       this.logger.debug("opened connection", this.socketOptions);
     }
+
     // Set options on the socket
     this.connection.setTimeout(this.socketOptions.connectTimeoutMS != null ? this.socketOptions.connectTimeoutMS : this.socketOptions.timeout);
     // Work around for 0.4.X
@@ -185,6 +204,21 @@ Connection.prototype.isConnected = function() {
   return this.connected && !this.connection.destroyed && this.connection.writable && this.connection.readable;
 }
 
+// Validate if the driver supports this server
+Connection.prototype.isCompatible = function() {
+  if(this.serverCapabilities == null) return true;
+  // Is compatible with backward server
+  if(this.serverCapabilities.minWireVersion == 0 
+    && this.serverCapabilities.maxWireVersion ==0) return true;
+
+  // Check if we overlap
+  if(this.serverCapabilities.minWireVersion >= this.minWireVersion
+    && this.serverCapabilities.maxWireVersion <= this.maxWireVersion) return true;
+
+  // Not compatible
+  return false;
+}
+
 // Write the data out to the socket
 Connection.prototype.write = function(command, callback) {
   try {
@@ -207,10 +241,10 @@ Connection.prototype.write = function(command, callback) {
       try {
         // Pass in the bson validation settings (validate early)
         var binaryCommand = command.toBinary(this.maxBsonSettings)
-
+        // Do we have a logger active log the event
         if(this.logger != null && this.logger.doDebug) 
           this.logger.debug("writing command to mongodb", {binary: binaryCommand, json: command[i]});
-
+        // Write the binary command out to socket
         this.writeSteam.write(binaryCommand);
       } catch(err) {
         return callback(err, null)

@@ -2,7 +2,7 @@
 
 ### Bugfixes
 
-- Before starting to write code, look for existing [tickets](https://github.com/mongodb/node-mongodb-native/issues) or [create one](https://github.com/mongodb/node-mongodb-native/issues/new) for your specific issue. That way you avoid working on something that might not be of interest or that has been addressed already in a different branch.
+- Before starting to write code, look for existing [tickets](https://jira.mongodb.org/browse/NODE) or [create one](https://jira.mongodb.org/secure/CreateIssue!default.jspa) for your specific issue under the "Node Driver" project. That way you avoid working on something that might not be of interest or that has been addressed already in a different branch.
 - Fork the [repo](https://github.com/mongodb/node-mongodb-native) _or_ for small documentation changes, navigate to the source on github and click the [Edit](https://github.com/blog/844-forking-with-the-edit-button) button.
 - Follow the general coding style of the rest of the project:
   - 2 space tabs
@@ -14,7 +14,7 @@
     - `for(..) {`
     - `while(..) {`
     - `function(err) {`
-- Write tests and make sure they pass (execute `make test` from the cmd line to run the test suite).
+- Write tests and make sure they pass (execute `npm test` from the cmd line to run the test suite).
 
 ### Documentation
 

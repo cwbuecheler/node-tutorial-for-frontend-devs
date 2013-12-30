@@ -3,6 +3,7 @@ var ReadPreference = require('./read_preference').ReadPreference
   , Server = require('./server').Server
   , format = require('util').format
   , timers = require('timers')
+  , utils = require('../utils')
   , inherits = require('util').inherits;
 
 // Set processor, setImmediate if 0.10 otherwise nextTick
@@ -75,6 +76,10 @@ var Mongos = function Mongos(servers, options) {
     // Set socket options
     server.socketOptions = socketOptions;
   }
+
+  // Allow setting the socketTimeoutMS on all connections
+  // to work around issues such as secondaries blocking due to compaction
+  utils.setSocketTimeoutProperty(this, this.socketOptions);  
 }
 
 /**
@@ -140,6 +145,8 @@ Mongos.prototype.connect = function(db, options, callback) {
   // Error handler
   var errorOrCloseHandler = function(_server) {
     return function(err, result) {
+      // Emit left event, signaling mongos left the ha
+      self.emit('left', 'mongos', _server);
       // Execute all the callbacks with errors
       self.__executeAllCallbacksWithError(err);
       // Check if we have the server
@@ -358,6 +365,9 @@ Mongos.prototype.connect = function(db, options, callback) {
  * Add a server to the list of up servers and sort them by ping time
  */
 var add_server = function(self, _server) {
+  // Emit a new server joined
+  self.emit('joined', "mongos", null, _server);
+  // Get the server url
   var server_key = format("%s:%s", _server.host, _server.port);
   // Push to list of valid server
   self.upServers[server_key] = _server;
@@ -499,6 +509,9 @@ Mongos.prototype.close = function(callback) {
   processor(function() {
     self._emitAcrossAllDbInstances(self, null, "close", null, null, true)    
   });
+
+  // Flush out any remaining call handlers
+  self._flushAllCallHandlers(utils.toError("Connection Closed By Application"));
 
   // Close all the up servers
   for(var name in this.upServers) {

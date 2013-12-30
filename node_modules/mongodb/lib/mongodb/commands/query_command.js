@@ -49,6 +49,9 @@ var QueryCommand = exports.QueryCommand = function(db, collectionName, queryOpti
     this.queryOptions |= QueryCommand.OPTS_SLAVE;
   }
 
+  // If checkKeys set
+  this.checkKeys = typeof options.checkKeys == 'boolean' ? options.checkKeys : false;
+
   // Let us defined on a command basis if we want functions to be serialized or not
   if(options['serializeFunctions'] != null && options['serializeFunctions']) {
     this.serializeFunctions = true;
@@ -273,7 +276,7 @@ QueryCommand.prototype.toBinary = function(bsonSettings) {
 QueryCommand.OPTS_NONE = 0;
 QueryCommand.OPTS_TAILABLE_CURSOR = 2;
 QueryCommand.OPTS_SLAVE = 4;
-QueryCommand.OPTS_OPLOG_REPLY = 8;
+QueryCommand.OPTS_OPLOG_REPLAY = 8;
 QueryCommand.OPTS_NO_CURSOR_TIMEOUT = 16;
 QueryCommand.OPTS_AWAIT_DATA = 32;
 QueryCommand.OPTS_EXHAUST = 64;

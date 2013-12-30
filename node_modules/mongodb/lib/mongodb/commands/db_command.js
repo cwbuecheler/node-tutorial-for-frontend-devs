@@ -17,12 +17,17 @@ var DbCommand = exports.DbCommand = function(dbInstance, collectionName, queryOp
   this.returnFieldSelector = returnFieldSelector;
   this.db = dbInstance;
 
+  // Set the slave ok bit
   if(this.db && this.db.slaveOk) {
     this.queryOptions |= QueryCommand.OPTS_SLAVE;
   }
 
   // Make sure we don't get a null exception
   options = options == null ? {} : options;
+
+  // Allow for overriding the BSON checkKeys function
+  this.checkKeys = typeof options['checkKeys'] == 'boolean' ? options["checkKeys"] : true;
+
   // Let us defined on a command basis if we want functions to be serialized or not
   if(options['serializeFunctions'] != null && options['serializeFunctions']) {
     this.serializeFunctions = true;
@@ -229,6 +234,7 @@ DbCommand.createDropDatabaseCommand = function(db) {
 
 DbCommand.createDbCommand = function(db, command_hash, options, auth_db) {
   var db_name = (auth_db ? auth_db : db.databaseName) + "." + DbCommand.SYSTEM_COMMAND_COLLECTION;
+  options = options == null ? {checkKeys: false} : options;
   return new DbCommand(db, db_name, QueryCommand.OPTS_NO_CURSOR_TIMEOUT, 0, -1, command_hash, null, options);
 };
 
@@ -241,5 +247,7 @@ DbCommand.createAdminDbCommandSlaveOk = function(db, command_hash) {
 };
 
 DbCommand.createDbSlaveOkCommand = function(db, command_hash, options) {
-  return new DbCommand(db, db.databaseName + "." + DbCommand.SYSTEM_COMMAND_COLLECTION, QueryCommand.OPTS_NO_CURSOR_TIMEOUT | QueryCommand.OPTS_SLAVE, 0, -1, command_hash, null, options);
+  options = options == null ? {checkKeys: false} : options;
+  var dbName = options.dbName ? options.dbName : db.databaseName;
+  return new DbCommand(db, dbName + "." + DbCommand.SYSTEM_COMMAND_COLLECTION, QueryCommand.OPTS_NO_CURSOR_TIMEOUT | QueryCommand.OPTS_SLAVE, 0, -1, command_hash, null, options);
 };

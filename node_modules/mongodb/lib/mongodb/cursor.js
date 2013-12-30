@@ -25,6 +25,7 @@ var processor = require('./utils').processor();
  *  - **timeout** {Boolean}, timeout allow the query to timeout.
  *  - **tailable** {Boolean}, tailable allow the cursor to be tailable.
  *  - **awaitdata** {Boolean}, awaitdata allow the cursor to wait for data, only applicable for tailable cursor.
+ *  - **oplogReplay** {Boolean}, sets an internal flag, only applicable for tailable cursor.
  *  - **batchSize** {Number}, batchSize the number of the subset of results to request the database to return for every request. This should initially be greater than 1 otherwise the database will automatically close the cursor. The batch size can be set to 1 with cursorInstance.batchSize after performing the initial query to the database.
  *  - **raw** {Boolean}, raw return all query documents as raw buffers (default false).
  *  - **read** {Boolean}, read specify override of read from source (primary/secondary).
@@ -32,6 +33,7 @@ var processor = require('./utils').processor();
  *  - **maxScan** {Number}, maxScan limit the number of items to scan.
  *  - **min** {Number}, min set index bounds.
  *  - **max** {Number}, max set index bounds.
+ *  - **maxTimeMS** {Number}, number of miliseconds to wait before aborting the query.
  *  - **showDiskLoc** {Boolean}, showDiskLoc show disk location of results.
  *  - **comment** {String}, comment you can put a $comment field on a query to make looking in the profiler logs simpler.
  *  - **numberOfRetries** {Number}, numberOfRetries if using awaidata specifies the number of times to retry on timeout.
@@ -63,6 +65,7 @@ function Cursor(db, collection, selector, fields, options) {
   this.timeout = options.timeout == null ? true : options.timeout;
   this.tailable = options.tailable;
   this.awaitdata = options.awaitdata;
+  this.oplogReplay = options.oplogReplay;
   this.numberOfRetries = options.numberOfRetries == null ? 5 : options.numberOfRetries;
   this.currentNumberOfRetries = this.numberOfRetries;
   this.batchSizeValue = options.batchSize == null ? 0 : options.batchSize;
@@ -78,6 +81,7 @@ function Cursor(db, collection, selector, fields, options) {
   this.exhaust = options.exhaust || false;
   this.partial = options.partial || false;
   this.slaveOk = options.slaveOk || false;
+  this.maxTimeMSValue = options.maxTimeMS;
 
   this.totalNumberOfRecords = 0;
   this.items = [];
@@ -201,7 +205,7 @@ var getAllByGetMore = function(self, callback) {
     if(self.cursorId.toString() == "0") return callback(null, null);
     getAllByGetMore(self, callback);
   })
-}
+};
 
 /**
  * Iterates over all the documents for this cursor. As with **{cursor.toArray}**,
@@ -248,7 +252,7 @@ Cursor.prototype.each = function(callback) {
   } else {
     callback(new Error("Cursor is closed"), null);
   }
-}
+};
 
 // Special for exhaust command as we don't initiate the actual result sets
 // the server just sends them as they arrive meaning we need to get the IO event
@@ -305,6 +309,9 @@ Cursor.prototype.count = function(applySkipLimit, callback) {
     if(typeof this.skipValue == 'number') options.skip = this.skipValue;
     if(typeof this.limitValue == 'number') options.limit = this.limitValue;    
   }
+
+  // If maxTimeMS set
+  if(typeof this.maxTimeMSValue == 'number') options.maxTimeMS = this.maxTimeMSValue;
 
   // Call count command
   this.collection.count(this.selector, options, callback);
@@ -378,6 +385,27 @@ Cursor.prototype.limit = function(limit, callback) {
     }
   }
 
+  return this;
+};
+
+/**
+ * Specifies a time limit for a query operation. After the specified
+ * time is exceeded, the operation will be aborted and an error will be
+ * returned to the client. If maxTimeMS is null, no limit is applied.
+ *
+ * @param {Number} maxTimeMS the maxTimeMS for the query.
+ * @param {Function} [callback] this optional callback will be called after executing this method. The first parameter will contain an error object when the limit given is not a valid number or when the cursor is already closed while the second parameter will contain a reference to this object upon successful execution.
+ * @return {Cursor} an instance of this object.
+ * @api public
+ */
+Cursor.prototype.maxTimeMS = function(maxTimeMS, callback) {
+  if(typeof maxTimeMS != 'number') {
+    throw new Error("maxTimeMS must be a number");
+  }
+  
+  // Save the maxTimeMS option
+  this.maxTimeMSValue = maxTimeMS;
+  // Return the cursor for chaining
   return this;
 };
 
@@ -512,6 +540,12 @@ var generateQueryCommand = function(self) {
     if(self.awaitdata != null) {
       queryOptions |= QueryCommand.OPTS_AWAIT_DATA;
     }
+
+    // This sets an internal undocumented flag. Clients should not depend on its
+    // behavior!
+    if(self.oplogReplay != null) {
+      queryOptions |= QueryCommand.OPTS_OPLOG_REPLAY;
+    }
   }
 
   if(self.exhaust) {
@@ -544,7 +578,7 @@ var generateQueryCommand = function(self) {
   // Check if we need a special selector
   if(self.sortValue != null || self.explainValue != null || self.hint != null || self.snapshot != null
       || self.returnKey != null || self.maxScan != null || self.min != null || self.max != null
-      || self.showDiskLoc != null || self.comment != null) {
+      || self.showDiskLoc != null || self.comment != null || typeof self.maxTimeMSValue == 'number') {
 
     // Build special selector
     var specialSelector = {'$query':self.selector};
@@ -557,6 +591,17 @@ var generateQueryCommand = function(self) {
     if(self.max != null) specialSelector['$max'] = self.max;
     if(self.showDiskLoc != null) specialSelector['$showDiskLoc'] = self.showDiskLoc;
     if(self.comment != null) specialSelector['$comment'] = self.comment;
+    
+    // If we are querying the $cmd collection we need to add maxTimeMS as a field
+    // otherwise for a normal query it's a "special selector" $maxTimeMS
+    if(typeof self.maxTimeMSValue == 'number' 
+      && self.collectionName.indexOf('.$cmd') != -1) {
+      specialSelector['maxTimeMS'] = self.maxTimeMSValue;
+    } else if(typeof self.maxTimeMSValue == 'number' 
+      && self.collectionName.indexOf('.$cmd') == -1) {
+      specialSelector['$maxTimeMS'] = self.maxTimeMSValue;
+    }
+    
     // If we have explain set only return a single document with automatic cursor close
     if(self.explainValue != null) {
       numberToReturn = (-1)*Math.abs(numberToReturn);
@@ -617,7 +662,13 @@ Cursor.prototype.nextObject = function(options, callback) {
       return callback(err, null);
     }
 
-    var queryOptions = {exhaust: self.exhaust, raw:self.raw, read:self.read, connection:self.connection};
+    // No need to check the keys
+    var queryOptions = {exhaust: self.exhaust
+      , raw:self.raw
+      , read:self.read
+      , connection:self.connection
+      , checkKeys: false};
+      
     // Execute command
     var commandHandler = function(err, result) {
       // If on reconnect, the command got given a different connection, switch
@@ -632,6 +683,10 @@ Cursor.prototype.nextObject = function(options, callback) {
 
       if(err == null && result && result.documents[0] && result.documents[0]['$err']) {
         return self.close(function() {callback(utils.toError(result.documents[0]['$err']), null);});
+      }
+
+      if(err == null && result && result.documents[0] && result.documents[0]['errmsg']) {
+        return self.close(function() {callback(utils.toError(result.documents[0]), null);});        
       }
 
       self.queryRun = true;
@@ -845,6 +900,7 @@ Cursor.prototype.explain = function(callback) {
     , showDiskLoc: this.showDiskLoc
     , comment: this.comment
     , awaitdata: this.awaitdata
+    , oplogReplay: this.oplogReplay
     , numberOfRetries: this.numberOfRetries
     , dbName: this.dbName
   });

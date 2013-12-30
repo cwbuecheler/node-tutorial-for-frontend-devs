@@ -24,6 +24,7 @@ var Db = require('./db').Db
  *  - **recordQueryStats** {Boolean, default:false}, record query statistics during execution.
  *  - **retryMiliSeconds** {Number, default:5000}, number of miliseconds between retries.
  *  - **numberOfRetries** {Number, default:5}, number of retries off connection.
+ *  - **bufferMaxEntries** {Boolean, default: -1}, sets a cap on how many operations the driver will buffer up before giving up on getting a working connection, default is -1 which is unlimited
  * 
  * Deprecated Options 
  *  - **safe** {true | {w:n, wtimeout:n} | {fsync:true}, default:false}, executes with a getLastError command returning the results of the command on MongoDB.
@@ -210,7 +211,13 @@ MongoClient.connect = function(url, options, callback) {
   // Connect to all servers and run ismaster
   for(var i = 0; i < object.servers.length; i++) {
     // Set up socket options
-    var _server_options = {poolSize:1, socketOptions:{connectTimeoutMS:1000}, auto_reconnect:false};
+    var _server_options = {
+        poolSize:1
+      , socketOptions: {
+          connectTimeoutMS:30000 
+        , socketTimeoutMS: 30000
+      }
+      , auto_reconnect:false};
 
     // Ensure we have ssl setup for the servers
     if(object.rs_options.ssl) {
@@ -346,6 +353,18 @@ var _finishConnecting = function(serverConfig, object, options, callback) {
   // Add the safe object
   object.db_options.safe = safe;
 
+  // Get the socketTimeoutMS
+  var socketTimeoutMS = object.server_options.socketOptions.socketTimeoutMS || 0;
+
+  // If we have a replset, override with replicaset socket timeout option if available
+  if(serverConfig instanceof ReplSet) {
+    socketTimeoutMS = object.rs_options.socketOptions.socketTimeoutMS || socketTimeoutMS;
+  }
+
+  // Set socketTimeout to the same as the connectTimeoutMS or 30 sec
+  serverConfig.connectTimeoutMS = serverConfig.connectTimeoutMS || 30000;
+  serverConfig.socketTimeoutMS = serverConfig.connectTimeoutMS;
+
   // Set up the db options
   var db = new Db(object.dbName, serverConfig, object.db_options);
   // Open the db
@@ -361,6 +380,10 @@ var _finishConnecting = function(serverConfig, object, options, callback) {
       });
     }
 
+    // Reset the socket timeout
+    serverConfig.socketTimeoutMS = socketTimeoutMS || 0;
+
+    // Set the provided write concern or fall back to w:1 as default
     if(db.options !== null && !db.options.safe && !db.options.journal 
       && !db.options.w && !db.options.fsync && typeof db.options.w != 'number'
       && (db.options.safe == false && object.db_options.url.indexOf("safe=") == -1)) {
@@ -414,6 +437,5 @@ var _finishConnecting = function(serverConfig, object, options, callback) {
     }
   });
 }
-
 
 exports.MongoClient = MongoClient;

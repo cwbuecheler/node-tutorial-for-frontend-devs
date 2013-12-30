@@ -141,8 +141,8 @@ GridStore.prototype.open = function(callback) {
   }
 
   var self = this;
-
-  if((self.mode == "w" || self.mode == "w+") && self.db.serverConfig.primary != null) {
+  // If we are writing we need to ensure we have the right indexes for md5's
+  if((self.mode == "w" || self.mode == "w+")) {
     // Get files collection
     self.collection(function(err, collection) {
       if(err) return callback(err);
@@ -460,19 +460,7 @@ var writeBuffer = function(self, buffer, close, callback) {
  * @api private
  */
 var buildMongoObject = function(self, callback) {
-  // // Keeps the final chunk number
-  // var chunkNumber = 0;
-  // var previousChunkSize = 0;
-  // // Get the correct chunk Number, if we have an empty chunk return the previous chunk number
-  // if(null != self.currentChunk && self.currentChunk.chunkNumber > 0 && self.currentChunk.position == 0) {
-  //   chunkNumber = self.currentChunk.chunkNumber - 1;
-  // } else {
-  //   chunkNumber = self.currentChunk.chunkNumber;
-  //   previousChunkSize = self.currentChunk.position;
-  // }
-
-  // // Calcuate the length
-  // var length = self.currentChunk != null ? (chunkNumber * self.chunkSize + previousChunkSize) : 0;
+  // Calcuate the length
   var mongoObject = {
     '_id': self.fileId,
     'filename': self.filename,

@@ -106,7 +106,7 @@ exports.isRegExp = function (arg) {
 var toError = function(error) {
   if (error instanceof Error) return error;
 
-  var msg = error.err || error.errmsg || error;
+  var msg = error.err || error.errmsg || error.errMessage || error;
   var e = new Error(msg);
   e.name = 'MongoError';
 
@@ -145,16 +145,16 @@ exports.objectToArray = function(object) {
  */
 exports.handleSingleCommandResultReturn = function(override_value_true, override_value_false, callback) {
   return function(err, result, connection) {
-    if(err) return callback(err, null);
+    if(err && typeof callback == 'function') return callback(err, null);
     if(!result || !result.documents || result.documents.length == 0)
-      if(callback) return callback(toError("command failed to return results"), null)
-    if(result.documents[0].ok == 1) {
+      if(typeof callback == 'function') return callback(toError("command failed to return results"), null)
+    if(result && result.documents[0].ok == 1) {
       if(override_value_true) return callback(null, override_value_true)
-      if(callback) return callback(null, result.documents[0]);
+      if(typeof callback == 'function') return callback(null, result.documents[0]);
     }
 
     // Return the error from the document
-    if(callback) return callback(toError(result.documents[0]), override_value_false);    
+    if(typeof callback == 'function') return callback(toError(result.documents[0]), override_value_false);    
   }
 }
 
@@ -166,8 +166,37 @@ exports.handleSingleCommandResultReturn = function(override_value_true, override
 exports.processor = function() {
   // Set processor, setImmediate if 0.10 otherwise nextTick
   process.maxTickDepth = Infinity;
-  var processor = timers.setImmediate ? timers.setImmediate : process.nextTick;
-  // processor = process.nextTick;
-  return processor;  
+  // Only use nextTick
+  return process.nextTick;
 }
+
+/**
+ * Allow setting the socketTimeoutMS on all connections
+ * to work around issues such as secondaries blocking due to compaction
+ *
+ * @ignore
+ * @api private
+ */
+exports.setSocketTimeoutProperty = function(self, options) {
+  Object.defineProperty(self, "socketTimeoutMS", {
+      enumerable: true
+    , get: function () { return options.socketTimeoutMS; }
+    , set: function (value) { 
+      // Set the socket timeoutMS value
+      options.socketTimeoutMS = value;
+
+      // Get all the connections
+      var connections = self.allRawConnections();
+      for(var i = 0; i < connections.length; i++) {
+        connections[i].socketTimeoutMS = value;
+      }
+    }
+  });  
+}
+
+exports.hasWriteCommands = function(connection) {
+  return connection != null && connection.serverCapabilities != null && connection.serverCapabilities.hasWriteCommands;
+}
+
+
 

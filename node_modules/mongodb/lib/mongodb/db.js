@@ -17,10 +17,13 @@ var QueryCommand = require('./commands/query_command').QueryCommand
   , crypto = require('crypto')
   , timers = require('timers')
   , utils = require('./utils')
+  
+  // Authentication methods
   , mongodb_cr_authenticate = require('./auth/mongodb_cr.js').authenticate
   , mongodb_gssapi_authenticate = require('./auth/mongodb_gssapi.js').authenticate
   , mongodb_sspi_authenticate = require('./auth/mongodb_sspi.js').authenticate
-  , mongodb_plain_authenticate = require('./auth/mongodb_plain.js').authenticate;
+  , mongodb_plain_authenticate = require('./auth/mongodb_plain.js').authenticate
+  , mongodb_x509_authenticate = require('./auth/mongodb_x509.js').authenticate;
 
 var hasKerberos = false;
 // Check if we have a the kerberos library
@@ -36,22 +39,23 @@ var processor = require('./utils').processor();
  * Create a new Db instance.
  *
  * Options
- *  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowlegement of write and w >= 1, w = 'majority' or tag acknowledges the write
+ *  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowledgement of write and w >= 1, w = 'majority' or tag acknowledges the write
  *  - **wtimeout**, {Number, 0} set the timeout for waiting for write concern to finish (combines with w option)
  *  - **fsync**, (Boolean, default:false) write waits for fsync before returning
  *  - **journal**, (Boolean, default:false) write waits for journal sync before returning
- *  - **readPreference** {String}, the prefered read preference (ReadPreference.PRIMARY, ReadPreference.PRIMARY_PREFERRED, ReadPreference.SECONDARY, ReadPreference.SECONDARY_PREFERRED, ReadPreference.NEAREST).
+ *  - **readPreference** {String}, the preferred read preference (ReadPreference.PRIMARY, ReadPreference.PRIMARY_PREFERRED, ReadPreference.SECONDARY, ReadPreference.SECONDARY_PREFERRED, ReadPreference.NEAREST).
  *  - **native_parser** {Boolean, default:false}, use c++ bson parser.
  *  - **forceServerObjectId** {Boolean, default:false}, force server to create _id fields instead of client.
  *  - **pkFactory** {Object}, object overriding the basic ObjectID primary key generation.
  *  - **serializeFunctions** {Boolean, default:false}, serialize functions.
- *  - **raw** {Boolean, default:false}, peform operations using raw bson buffers.
+ *  - **raw** {Boolean, default:false}, perform operations using raw bson buffers.
  *  - **recordQueryStats** {Boolean, default:false}, record query statistics during execution.
- *  - **retryMiliSeconds** {Number, default:5000}, number of miliseconds between retries.
+ *  - **retryMiliSeconds** {Number, default:5000}, number of milliseconds between retries.
  *  - **numberOfRetries** {Number, default:5}, number of retries off connection.
  *  - **logger** {Object, default:null}, an object representing a logger that you want to use, needs to support functions debug, log, error **({error:function(message, object) {}, log:function(message, object) {}, debug:function(message, object) {}})**.
  *  - **slaveOk** {Number, default:null}, force setting of SlaveOk flag on queries (only use when explicitly connecting to a secondary server).
  *  - **promoteLongs** {Boolean, default:true}, when deserializing a Long will fit it into a Number if it's smaller than 53 bits
+ *  - **bufferMaxEntries** {Boolean, default: -1}, sets a cap on how many operations the driver will buffer up before giving up on getting a working connection, default is -1 which is unlimited
  * 
  * Deprecated Options 
  *  - **safe** {true | {w:n, wtimeout:n} | {fsync:true}, default:false}, executes with a getLastError command returning the results of the command on MongoDB.
@@ -64,7 +68,6 @@ var processor = require('./utils').processor();
 function Db(databaseName, serverConfig, options) {
   if(!(this instanceof Db)) return new Db(databaseName, serverConfig, options);
   EventEmitter.call(this);
-
   var self = this;
   this.databaseName = databaseName;
   this.serverConfig = serverConfig;
@@ -76,16 +79,19 @@ function Db(databaseName, serverConfig, options) {
 
   // Verify that nobody is using this config
   if(!overrideUsedFlag && this.serverConfig != null && typeof this.serverConfig == 'object' && this.serverConfig._isUsed && this.serverConfig._isUsed()) {    
-    throw new Error("A Server or ReplSet instance cannot be shared across multiple Db instances");
+    throw new Error('A Server or ReplSet instance cannot be shared across multiple Db instances');
   } else if(!overrideUsedFlag && typeof this.serverConfig == 'object'){
     // Set being used
     this.serverConfig._used = true;
   }
 
   // Allow slaveOk override
-  this.slaveOk = this.options["slave_ok"] == null ? false : this.options["slave_ok"];
-  this.slaveOk = this.options["slaveOk"] == null ? this.slaveOk : this.options["slaveOk"];
+  this.slaveOk = this.options['slave_ok'] == null ? false : this.options['slave_ok'];
+  this.slaveOk = this.options['slaveOk'] == null ? this.slaveOk : this.options['slaveOk'];
   
+  // Number of operations to buffer before failure
+  this.bufferMaxEntries = typeof this.options['bufferMaxEntries'] == 'number' ? this.options['bufferMaxEntries'] : -1;
+
   // Ensure we have a valid db name
   validateDatabaseName(databaseName);
 
@@ -109,8 +115,8 @@ function Db(databaseName, serverConfig, options) {
     this.bson_deserializer.promoteLongs = this.options.promoteLongs == null ? true : this.options.promoteLongs;
   } catch (err) {
     // If we tried to instantiate the native driver
-    var msg = "Native bson parser not compiled, please compile "
-            + "or avoid using native_parser=true";
+    var msg = 'Native bson parser not compiled, please compile '
+            + 'or avoid using native_parser=true';
     throw Error(msg);
   }
 
@@ -130,9 +136,9 @@ function Db(databaseName, serverConfig, options) {
     console.log("=   one of the options                                                                 =");
     console.log("=                                                                                      =");
     console.log("=     w: (value of > -1 or the string 'majority'), where < 1 means                     =");
-    console.log("=        no write acknowlegement                                                       =");
-    console.log("=     journal: true/false, wait for flush to journal before acknowlegement             =");
-    console.log("=     fsync: true/false, wait for flush to file system before acknowlegement           =");
+    console.log("=        no write acknowledgement                                                       =");
+    console.log("=     journal: true/false, wait for flush to journal before acknowledgement             =");
+    console.log("=     fsync: true/false, wait for flush to file system before acknowledgement           =");
     console.log("=                                                                                      =");
     console.log("=  For backward compatibility safe is still supported and                              =");
     console.log("=   allows values of [true | false | {j:true} | {w:n, wtimeout:n} | {fsync:true}]      =");
@@ -143,7 +149,7 @@ function Db(databaseName, serverConfig, options) {
     console.log("=                                                                                      =");
     console.log("=   http://www.mongodb.org/display/DOCS/getLastError+Command                           =");
     console.log("=                                                                                      =");
-    console.log("=  The default of no acknowlegement will change in the very near future                =");
+    console.log("=  The default of no acknowledgement will change in the very near future                =");
     console.log("=                                                                                      =");
     console.log("=  This message will disappear when the default safe is set on the driver Db           =");
     console.log("========================================================================================");
@@ -225,7 +231,7 @@ inherits(Db, EventEmitter);
 /**
  * Initialize the database connection.
  *
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the index information or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the index information or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -261,10 +267,11 @@ Db.prototype.open = function(callback) {
     // Attempt to connect
     self.serverConfig.connect(self, connect_options, function(err, result) {
       if(err != null) {
-        // Set that db has been closed
-        self.openCalled = false;
-        // Return error from connection
-        return callback(err, null);
+        // Close db to reset connection
+        return self.close(function () {
+          // Return error from connection
+          return callback(err, null);
+        });
       }
       // Set the status of the server
       self._state = 'connected';
@@ -316,13 +323,13 @@ Db.prototype.db = function(dbName) {
 
   // Return the db object
   return db;  
-}
+};
 
 /**
  * Close the current db connection, including all the child db instances. Emits close event if no callback is provided.
  *
  * @param {Boolean} [forceClose] connection can never be reused.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -361,7 +368,7 @@ Db.prototype.admin = function(callback) {
  * Returns a cursor to all the collection information.
  *
  * @param {String} [collectionName] the collection name we wish to retrieve the information from.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the options or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the options or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -389,7 +396,7 @@ Db.prototype.collectionsInfo = function(collectionName, callback) {
  *
  * @param {String} [collectionName] the collection name we wish to filter by.
  * @param {Object} [options] additional options during update.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the collection names or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the collection names or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -434,14 +441,14 @@ Db.prototype.collectionNames = function(collectionName, options, callback) {
  * can use it without a callback in the following way. var collection = db.collection('mycollection');
  *
  * Options
-*  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowlegement of write and w >= 1, w = 'majority' or tag acknowledges the write
+*  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowledgement of write and w >= 1, w = 'majority' or tag acknowledges the write
  *  - **wtimeout**, {Number, 0} set the timeout for waiting for write concern to finish (combines with w option)
  *  - **fsync**, (Boolean, default:false) write waits for fsync before returning
  *  - **journal**, (Boolean, default:false) write waits for journal sync before returning
  *  - **serializeFunctions** {Boolean, default:false}, serialize functions on the document.
  *  - **raw** {Boolean, default:false}, perform all operations using raw bson objects.
  *  - **pkFactory** {Object}, object overriding the basic ObjectID primary key generation.
- *  - **readPreference** {String}, the prefered read preference (ReadPreference.PRIMARY, ReadPreference.PRIMARY_PREFERRED, ReadPreference.SECONDARY, ReadPreference.SECONDARY_PREFERRED, ReadPreference.NEAREST).
+ *  - **readPreference** {String}, the preferred read preference (ReadPreference.PRIMARY, ReadPreference.PRIMARY_PREFERRED, ReadPreference.SECONDARY, ReadPreference.SECONDARY_PREFERRED, ReadPreference.NEAREST).
  *  - **strict**, (Boolean, default:false) returns an error if the collection does not exist
  * 
  * Deprecated Options 
@@ -449,7 +456,7 @@ Db.prototype.collectionNames = function(collectionName, options, callback) {
  *
  * @param {String} collectionName the collection name we wish to access.
  * @param {Object} [options] returns option results.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the collection or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the collection or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -492,7 +499,7 @@ Db.prototype.collection = function(collectionName, options, callback) {
 /**
  * Fetch all collections for the current db.
  *
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the collections or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the collections or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -519,7 +526,7 @@ Db.prototype.collections = function(callback) {
  * @param {Code} code javascript to execute on server.
  * @param {Object|Array} [parameters] the parameters for the call.
  * @param {Object} [options] the options
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from eval or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from eval or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -572,7 +579,7 @@ Db.prototype.eval = function(code, parameters, options, callback) {
  * Dereference a dbref, against a db
  *
  * @param {DBRef} dbRef db reference object we wish to resolve.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from dereference or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from dereference or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -590,7 +597,7 @@ Db.prototype.dereference = function(dbRef, callback) {
 /**
  * Logout user from server, fire off on all connections and remove all auth info
  *
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from logout or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from logout or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -621,27 +628,25 @@ Db.prototype.logout = function(options, callback) {
       utils.handleSingleCommandResultReturn(true, false, internalCallback)(err, result);
     }
   });
-}
+};
 
 /**
  * Authenticate a user against the server.
  * authMechanism
  * Options
- *  - **authSource** {String}, The database that the credentials are for,
- *    different from the name of the current DB, for example admin
  *  - **authMechanism** {String, default:MONGODB-CR}, The authentication mechanism to use, GSSAPI or MONGODB-CR
  *
  * @param {String} username username.
  * @param {String} password password.
  * @param {Object} [options] the options
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from authentication or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from authentication or null if an error occurred.
  * @return {null}
  * @api public
  */
 Db.prototype.authenticate = function(username, password, options, callback) {
   var self = this;
 
-  if(typeof callback === 'undefined') {
+  if(typeof options == 'function') {
     callback = options;
     options = {};
   }
@@ -651,8 +656,9 @@ Db.prototype.authenticate = function(username, password, options, callback) {
     options.authMechanism = 'MONGODB-CR';
   } else if(options.authMechanism != 'GSSAPI' 
     && options.authMechanism != 'MONGODB-CR'
+    && options.authMechanism != 'MONGODB-X509'
     && options.authMechanism != 'PLAIN') {
-      return callback(new Error("only GSSAPI, PLAIN or MONGODB-CR is supported by authMechanism"));
+      return callback(new Error("only GSSAPI, PLAIN, MONGODB-X509 or MONGODB-CR is supported by authMechanism"));
   }
 
   // the default db to authenticate against is 'this'
@@ -675,6 +681,8 @@ Db.prototype.authenticate = function(username, password, options, callback) {
     mongodb_cr_authenticate(self, username, password, authdb, options, _callback);
   } else if(options.authMechanism == 'PLAIN') {
     mongodb_plain_authenticate(self, username, password, options, _callback);
+  } else if(options.authMechanism == 'MONGODB-X509') {
+    mongodb_x509_authenticate(self, username, password, options, _callback);
   } else if(options.authMechanism == 'GSSAPI') {
     //
     // Kerberos library is not installed, throw and error
@@ -703,10 +711,12 @@ Db.prototype.authenticate = function(username, password, options, callback) {
  * Add a user to the database.
  *
  * Options
- *  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowlegement of write and w >= 1, w = 'majority' or tag acknowledges the write
+ *  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowledgement of write and w >= 1, w = 'majority' or tag acknowledges the write
  *  - **wtimeout**, {Number, 0} set the timeout for waiting for write concern to finish (combines with w option)
  *  - **fsync**, (Boolean, default:false) write waits for fsync before returning
  *  - **journal**, (Boolean, default:false) write waits for journal sync before returning
+ *  - **customData**, (Object, default:{}) custom data associated with the user (only Mongodb 2.6 or higher)
+ *  - **roles**, (Array, default:[]) roles associated with the created user (only Mongodb 2.6 or higher)
  * 
  * Deprecated Options 
  *  - **safe** {true | {w:n, wtimeout:n} | {fsync:true}, default:false}, executes with a getLastError command returning the results of the command on MongoDB.
@@ -714,18 +724,25 @@ Db.prototype.authenticate = function(username, password, options, callback) {
  * @param {String} username username.
  * @param {String} password password.
  * @param {Object} [options] additional options during update.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from addUser or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from addUser or null if an error occurred.
  * @return {null}
  * @api public
  */
 Db.prototype.addUser = function(username, password, options, callback) {
+  // Checkout a write connection to get the server capabilities
+  var connection = this.serverConfig.checkoutWriter();
+  if(connection != null && connection.serverCapabilities != null && connection.serverCapabilities.hasAuthCommands) {
+    return _executeAuthCreateUserCommand(this, username, password, options, callback);
+  }
+
+  // Unpack the parameters
   var self = this;
   var args = Array.prototype.slice.call(arguments, 2);
   callback = args.pop();
   options = args.length ? args.shift() || {} : {};
 
   // Get the error options
-  var errorOptions = _getWriteConcern(this, options, callback);
+  var errorOptions = _getWriteConcern(this, options);
   errorOptions.w = errorOptions.w == null ? 1 : errorOptions.w;
   // Use node md5 generator
   var md5 = crypto.createHash('md5');
@@ -748,7 +765,7 @@ Db.prototype.addUser = function(username, password, options, callback) {
       commandOptions.upsert = true;
 
       // We have a user, let's update the password or upsert if not
-      collection.update({user: username},{$set: {user: username, pwd: userPassword}}, commandOptions, function(err, results) {
+      collection.update({user: username},{$set: {user: username, pwd: userPassword}}, commandOptions, function(err, results, full) {
         if(count == 0 && err) {
           callback(null, [{user:username, pwd:userPassword}]);
         } else if(err) {
@@ -762,10 +779,89 @@ Db.prototype.addUser = function(username, password, options, callback) {
 };
 
 /**
+ * @ignore
+ */
+var _executeAuthCreateUserCommand = function(self, username, password, options, callback) {
+  // Special case where there is no password ($external users)
+  if(typeof username == 'string' 
+    && password != null && typeof password == 'object') {
+    callback = options;
+    options = password;
+    password = null;
+  }
+
+  // Unpack all options
+  if(typeof options == 'function') {
+    callback = options;
+    options = {};
+  }  
+
+  // Error out if we digestPassword set
+  if(options.digestPassword != null) {
+    throw utils.toError("The digestPassword option is not supported via add_user. Please use db.command('createUser', ...) instead for this option.");
+  }
+
+  // Get additional values
+  var customData = options.customData != null ? options.customData : {};
+  var roles = Array.isArray(options.roles) ? options.roles : [];
+  var maxTimeMS = typeof options.maxTimeMS == 'number' ? options.maxTimeMS : null;
+
+  // If not roles defined print deprecated message
+  if(roles.length == 0) {
+    console.log("Creating a user without roles is deprecated in MongoDB >= 2.6");
+  }
+
+  // Get the error options
+  var writeConcern = _getWriteConcern(self, options);
+  var commandOptions = {writeCommand:true};
+  if(options['dbName']) commandOptions.dbName = options['dbName'];
+
+  // Add maxTimeMS to options if set
+  if(maxTimeMS != null) commandOptions.maxTimeMS = maxTimeMS;
+
+  // Check the db name and add roles if needed
+  if((self.databaseName.toLowerCase() == 'admin' || options.dbName == 'admin') && !Array.isArray(options.roles)) {
+    roles = ['root']
+  } else if(!Array.isArray(options.roles)) {
+    roles = ['dbOwner']
+  }
+
+  // Build the command to execute
+  var command = {
+      createUser: username
+    , customData: customData
+    , roles: roles
+    , digestPassword:false
+    , writeConcern: writeConcern
+  }
+
+  // Use node md5 generator
+  var md5 = crypto.createHash('md5');
+  // Generate keys used for authentication
+  md5.update(username + ":mongo:" + password);
+  var userPassword = md5.digest('hex');
+
+  // No password
+  if(typeof password == 'string') {
+    command.pwd = userPassword;
+  }
+
+  // console.log("================================== add user")
+  // console.dir(command)
+
+  // Execute the command
+  self.command(command, commandOptions, function(err, result) {
+    if(err) return callback(err, null);
+    callback(!result.ok ? utils.toError("Failed to add user " + username) : null
+      , result.ok ? [{user: username, pwd: ''}] : null);
+  })
+}
+
+/**
  * Remove a user from a database
  *
  * Options
-*  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowlegement of write and w >= 1, w = 'majority' or tag acknowledges the write
+ *  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowledgement of write and w >= 1, w = 'majority' or tag acknowledges the write
  *  - **wtimeout**, {Number, 0} set the timeout for waiting for write concern to finish (combines with w option)
  *  - **fsync**, (Boolean, default:false) write waits for fsync before returning
  *  - **journal**, (Boolean, default:false) write waits for journal sync before returning
@@ -775,11 +871,18 @@ Db.prototype.addUser = function(username, password, options, callback) {
  *
  * @param {String} username username.
  * @param {Object} [options] additional options during update.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from removeUser or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from removeUser or null if an error occurred.
  * @return {null}
  * @api public
  */
 Db.prototype.removeUser = function(username, options, callback) {
+  // Checkout a write connection to get the server capabilities
+  var connection = this.serverConfig.checkoutWriter();
+  if(connection != null && connection.serverCapabilities != null && connection.serverCapabilities.hasAuthCommands) {
+    return _executeAuthRemoveUserCommand(this, username, options, callback);
+  }
+
+  // Unpack the parameters
   var self = this;
   var args = Array.prototype.slice.call(arguments, 1);
   callback = args.pop();
@@ -809,11 +912,42 @@ Db.prototype.removeUser = function(username, options, callback) {
   });
 };
 
+var _executeAuthRemoveUserCommand = function(self, username, options, callback) {
+  // Unpack all options
+  if(typeof options == 'function') {
+    callback = options;
+    options = {};
+  }
+
+  // Get the error options
+  var writeConcern = _getWriteConcern(self, options);
+  var commandOptions = {writeCommand:true};
+  if(options['dbName']) commandOptions.dbName = options['dbName'];
+
+  // Get additional values
+  var maxTimeMS = typeof options.maxTimeMS == 'number' ? options.maxTimeMS : null;
+
+  // Add maxTimeMS to options if set
+  if(maxTimeMS != null) commandOptions.maxTimeMS = maxTimeMS;
+
+  // Build the command to execute
+  var command = {
+      dropUser: username
+    , writeConcern: writeConcern
+  }
+
+  // Execute the command
+  self.command(command, commandOptions, function(err, result) {
+    if(err) return callback(err, null);
+    callback(null, result.ok ? true : false);
+  })
+}
+
 /**
  * Creates a collection on a server pre-allocating space, need to create f.ex capped collections.
  *
  * Options
-*  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowlegement of write and w >= 1, w = 'majority' or tag acknowledges the write
+*  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowledgement of write and w >= 1, w = 'majority' or tag acknowledges the write
  *  - **wtimeout**, {Number, 0} set the timeout for waiting for write concern to finish (combines with w option)
  *  - **fsync**, (Boolean, default:false) write waits for fsync before returning
  *  - **journal**, (Boolean, default:false) write waits for journal sync before returning
@@ -824,7 +958,7 @@ Db.prototype.removeUser = function(username, options, callback) {
  *  - **size** {Number}, the size of the capped collection in bytes.
  *  - **max** {Number}, the maximum number of documents in the capped collection.
  *  - **autoIndexId** {Boolean, default:true}, create an index on the _id field of the document, True by default on MongoDB 2.2 or higher off for version < 2.2.
- *  - **readPreference** {String}, the prefered read preference (ReadPreference.PRIMARY, ReadPreference.PRIMARY_PREFERRED, ReadPreference.SECONDARY, ReadPreference.SECONDARY_PREFERRED, ReadPreference.NEAREST).
+ *  - **readPreference** {String}, the preferred read preference (ReadPreference.PRIMARY, ReadPreference.PRIMARY_PREFERRED, ReadPreference.SECONDARY, ReadPreference.SECONDARY_PREFERRED, ReadPreference.NEAREST).
  *  - **strict**, (Boolean, default:false) throws an error if collection already exists
  * 
  * Deprecated Options 
@@ -832,15 +966,16 @@ Db.prototype.removeUser = function(username, options, callback) {
  *
  * @param {String} collectionName the collection name we wish to access.
  * @param {Object} [options] returns option results.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from createCollection or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from createCollection or null if an error occurred.
  * @return {null}
  * @api public
  */
 Db.prototype.createCollection = function(collectionName, options, callback) {
-  var args = Array.prototype.slice.call(arguments, 1);
-  callback = args.pop();
-  options = args.length ? args.shift() : null;
   var self = this;
+  if(typeof options == 'function') {
+    callback = options;
+    options = {};
+  }
 
   // Figure out the safe mode settings
   var safe = self.safe != null && self.safe == false ? {w: 1} : self.safe;
@@ -894,28 +1029,28 @@ var _getReadConcern = function(self, options) {
 /**
  * Execute a command hash against MongoDB. This lets you acess any commands not available through the api on the server.
  *
+ * Options
+ *  - **maxTimeMS** {Number}, number of miliseconds to wait before aborting the query.
+ *  - **ignoreCommandFilter** {Boolean}, overrides the default redirection of certain commands to primary.
+ *  - **writeCommand** {Boolean, default: false}, signals this is a write command and to ignore read preferences
+ *  - **checkKeys** {Boolean, default: false}, overrides the default not to check the key names for the command
+ *
  * @param {Object} selector the command hash to send to the server, ex: {ping:1}.
+ * @param {Object} [options] additional options for the command.
  * @param {Function} callback this will be called after executing this method. The command always return the whole result of the command as the second parameter.
  * @return {null}
  * @api public
  */
 Db.prototype.command = function(selector, options, callback) {
-  var args = Array.prototype.slice.call(arguments, 1);
-  callback = args.pop();
-  options = args.length ? args.shift() || {} : {};
+  if(typeof options == 'function') {
+    callback = options;
+    options = {};
+  }
+
   // Ignore command preference (I know what I'm doing)
   var ignoreCommandFilter = options.ignoreCommandFilter ? options.ignoreCommandFilter : false;
-
-  // Set up the options
-  var cursor = new Cursor(this
-    , new Collection(this, DbCommand.SYSTEM_COMMAND_COLLECTION), selector, {}, {
-      limit: -1, timeout: QueryCommand.OPTS_NO_CURSOR_TIMEOUT, dbName: options['dbName']
-    });
-
   // Set read preference if we set one
-  var readPreference = options['readPreference'] ? options['readPreference'] : false;
-  // If we have a connection passed in
-  cursor.connection = options.connection;
+  var readPreference = _getReadConcern(this, options);
 
   // Ensure only commands who support read Prefrences are exeuted otherwise override and use Primary
   if(readPreference != false && ignoreCommandFilter == false) {
@@ -924,20 +1059,43 @@ Db.prototype.command = function(selector, options, callback) {
       || selector['geoWalk'] || selector['text']
       || (selector['mapreduce'] && (selector.out == 'inline' || selector.out.inline))) {
       // Set the read preference
-      cursor.setReadPreference(readPreference);
+      options.readPreference = readPreference;
     } else {
-      cursor.setReadPreference(ReadPreference.PRIMARY);
+      options.readPreference = ReadPreference.PRIMARY;
     }
   } else if(readPreference != false) {
-    // Force setting the command filter
-    cursor.setReadPreference(readPreference);    
+    options.readPreference = readPreference;
   }
 
-  // Get the next result
-  cursor.nextObject(function(err, result) {
+  // Add the maxTimeMS option to the command if specified
+  if(typeof options.maxTimeMS == 'number') {
+    selector.maxTimeMS = options.maxTimeMS    
+  }
+
+  // Command options
+  var command_options = {};
+
+  // Do we have an override for checkKeys
+  if(typeof options['checkKeys'] == 'boolean') command_options['checkKeys'] = options['checkKeys'];
+  command_options['checkKeys'] = typeof options['checkKeys'] == 'boolean' ? options['checkKeys'] : false;
+  if(typeof options['serializeFunctions'] == 'boolean') command_options['serializeFunctions'] = options['serializeFunctions'];
+  if(options['dbName']) command_options['dbName'] = options['dbName'];
+
+  // If we have a write command, remove readPreference as an option
+  if((options.writeCommand 
+    || selector['findAndModify'] 
+    || selector['insert'] || selector['update'] || selector['delete']
+    || selector['createUser'] || selector['updateUser'] || selector['removeUser'])
+    && options.readPreference) {
+    delete options['readPreference'];
+  }
+
+  // Execute a query command
+  this._executeQueryCommand(DbCommand.createDbSlaveOkCommand(this, selector, command_options), options, function(err, results) {
     if(err) return callback(err, null);
-    if(result == null) return callback(new Error("no result returned from command"), null);
-    callback(null, result);
+    if(results.documents[0].errmsg) 
+      return callback(utils.toError(results.documents[0]), null);
+    callback(null, results.documents[0]);
   });
 };
 
@@ -945,7 +1103,7 @@ Db.prototype.command = function(selector, options, callback) {
  * Drop a collection from the database, removing it permanently. New accesses will create a new collection.
  *
  * @param {String} collectionName the name of the collection we wish to drop.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from dropCollection or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from dropCollection or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -968,7 +1126,7 @@ Db.prototype.dropCollection = function(collectionName, callback) {
  * @param {String} fromCollection the name of the current collection we wish to rename.
  * @param {String} toCollection the new name of the collection.
  * @param {Object} [options] returns option results.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from renameCollection or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from renameCollection or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -1001,7 +1159,7 @@ Db.prototype.renameCollection = function(fromCollection, toCollection, options, 
  *
  * @param {Object} [options] returns option results.
  * @param {Object} [connectionOptions] returns option results.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from lastError or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from lastError or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -1033,7 +1191,7 @@ Db.prototype.lastStatus = Db.prototype.lastError;
  *  - **connection** {Connection}, fire the getLastError down a specific connection.
  *
  * @param {Object} [options] returns option results.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from previousErrors or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from previousErrors or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -1087,7 +1245,7 @@ Db.prototype.executeDbAdminCommand = function(command_hash, options, callback) {
  *  - **connection** {Connection}, fire the getLastError down a specific connection.
  *
  * @param {Object} [options] returns option results.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from resetErrorHistory or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from resetErrorHistory or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -1106,7 +1264,7 @@ Db.prototype.resetErrorHistory = function(options, callback) {
  * Creates an index on the collection.
  *
  * Options
-*  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowlegement of write and w >= 1, w = 'majority' or tag acknowledges the write
+*  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowledgement of write and w >= 1, w = 'majority' or tag acknowledges the write
  *  - **wtimeout**, {Number, 0} set the timeout for waiting for write concern to finish (combines with w option)
  *  - **fsync**, (Boolean, default:false) write waits for fsync before returning
  *  - **journal**, (Boolean, default:false) write waits for journal sync before returning
@@ -1127,7 +1285,7 @@ Db.prototype.resetErrorHistory = function(options, callback) {
  * @param {String} collectionName name of the collection to create the index on.
  * @param {Object} fieldOrSpec fieldOrSpec that defines the index.
  * @param {Object} [options] additional options during update.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from createIndex or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from createIndex or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -1140,7 +1298,7 @@ Db.prototype.createIndex = function(collectionName, fieldOrSpec, options, callba
   options = options == null ? {} : options;
 
   // Get the error options
-  var errorOptions = _getWriteConcern(this, options, callback);
+  var errorOptions = _getWriteConcern(this, options);
   // Create command
   var command = DbCommand.createCreateIndexCommand(this, collectionName, fieldOrSpec, options);
   // Default command options
@@ -1194,7 +1352,7 @@ Db.prototype.createIndex = function(collectionName, fieldOrSpec, options, callba
  * Ensures that an index exists, if it does not it creates it
  *
  * Options
- *  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowlegement of write and w >= 1, w = 'majority' or tag acknowledges the write
+ *  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowledgement of write and w >= 1, w = 'majority' or tag acknowledges the write
  *  - **wtimeout**, {Number, 0} set the timeout for waiting for write concern to finish (combines with w option)
  *  - **fsync**, (Boolean, default:false) write waits for fsync before returning
  *  - **journal**, (Boolean, default:false) write waits for journal sync before returning
@@ -1214,7 +1372,7 @@ Db.prototype.createIndex = function(collectionName, fieldOrSpec, options, callba
  * @param {String} collectionName name of the collection to create the index on.
  * @param {Object} fieldOrSpec fieldOrSpec that defines the index.
  * @param {Object} [options] additional options during update.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from ensureIndex or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from ensureIndex or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -1231,7 +1389,7 @@ Db.prototype.ensureIndex = function(collectionName, fieldOrSpec, options, callba
   }
 
   // Get the error options
-  var errorOptions = _getWriteConcern(this, options, callback);
+  var errorOptions = _getWriteConcern(this, options);
   // Make sure we don't try to do a write concern without a callback
   if(_hasWriteConcern(errorOptions) && callback == null)
     throw new Error("Cannot use a writeConcern without a provided callback");
@@ -1301,10 +1459,10 @@ Db.prototype.ensureIndex = function(collectionName, fieldOrSpec, options, callba
  * Returns the information available on allocated cursors.
  *
  * Options
- *  - **readPreference** {String}, the prefered read preference (ReadPreference.PRIMARY, ReadPreference.PRIMARY_PREFERRED, ReadPreference.SECONDARY, ReadPreference.SECONDARY_PREFERRED, ReadPreference.NEAREST).
+ *  - **readPreference** {String}, the preferred read preference (ReadPreference.PRIMARY, ReadPreference.PRIMARY_PREFERRED, ReadPreference.SECONDARY, ReadPreference.SECONDARY_PREFERRED, ReadPreference.NEAREST).
  *
  * @param {Object} [options] additional options during update.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from cursorInfo or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from cursorInfo or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -1323,7 +1481,7 @@ Db.prototype.cursorInfo = function(options, callback) {
  *
  * @param {String} collectionName the name of the collection where the command will drop an index.
  * @param {String} indexName name of the index to drop.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from dropIndex or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from dropIndex or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -1337,7 +1495,7 @@ Db.prototype.dropIndex = function(collectionName, indexName, callback) {
  * Warning: reIndex is a blocking operation (indexes are rebuilt in the foreground) and will be slow for large collections.
  *
  * @param {String} collectionName the name of the collection.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from reIndex or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from reIndex or null if an error occurred.
  * @api public
 **/
 Db.prototype.reIndex = function(collectionName, callback) {
@@ -1354,7 +1512,7 @@ Db.prototype.reIndex = function(collectionName, callback) {
  *
  * @param {String} collectionName the name of the collection.
  * @param {Object} [options] additional options during update.
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from indexInformation or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from indexInformation or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -1407,7 +1565,7 @@ Db.prototype.indexInformation = function(collectionName, options, callback) {
 /**
  * Drop a database.
  *
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from dropDatabase or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from dropDatabase or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -1424,7 +1582,7 @@ Db.prototype.dropDatabase = function(callback) {
  *  - **readPreference** {String}, the preferred read preference ((Server.PRIMARY, Server.PRIMARY_PREFERRED, Server.SECONDARY, Server.SECONDARY_PREFERRED, Server.NEAREST).
  *
  * @param {Objects} [options] options for the stats command
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the results from stats or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the results from stats or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -1436,8 +1594,8 @@ Db.prototype.stats = function stats(options, callback) {
 
   // Build command object
   var commandObject = {
-    dbStats:this.collectionName,
-  }
+    dbStats:this.collectionName
+  };
 
   // Check if we have the scale value
   if(options['scale'] != null) commandObject['scale'] = options['scale'];
@@ -1451,7 +1609,8 @@ Db.prototype.stats = function stats(options, callback) {
  */
 var __executeQueryCommand = function(self, db_command, options, callback) {
   // Options unpacking
-  var read = options['read'] != null ? options['read'] : false;
+  var read = options['read'] != null ? options['read'] : false;  
+  read = options['readPreference'] != null && options['read'] == null ? options['readPreference'] : read;
   var raw = options['raw'] != null ? options['raw'] : self.raw;
   var onAll = options['onAll'] != null ? options['onAll'] : false;
   var specifiedConnection = options['connection'] != null ? options['connection'] : null;
@@ -1494,38 +1653,6 @@ var __executeQueryCommand = function(self, db_command, options, callback) {
     // Register the handler in the data structure
     self.serverConfig._registerHandler(db_command, raw, connection, exhaust, callback);
     
-    // Ensure the connection is valid
-    if(!connection.isConnected()) {
-      if(read == ReadPreference.PRIMARY 
-        || read == ReadPreference.PRIMARY_PREFERRED
-        || (read != null && typeof read == 'object' && read.mode)
-        || read == null) {
-        
-        // Save the command
-        self.serverConfig._commandsStore.read_from_writer(
-          {   type: 'query'
-            , db_command: db_command
-            , options: options
-            , callback: callback
-            , db: self
-            , executeQueryCommand: __executeQueryCommand
-            , executeInsertCommand: __executeInsertCommand
-          }
-        );
-      } else {
-        self.serverConfig._commandsStore.read(
-          {   type: 'query'
-            , db_command: db_command
-            , options: options
-            , callback: callback 
-            , db: self
-            , executeQueryCommand: __executeQueryCommand
-            , executeInsertCommand: __executeInsertCommand
-          }
-        );
-      }      
-    }
-
     // Write the message out and handle any errors if there are any
     connection.write(db_command, function(err) {
       if(err != null) {
@@ -1589,7 +1716,7 @@ var __executeQueryCommand = function(self, db_command, options, callback) {
       }
     });
   }
-}
+};
 
 /**
  * Execute db query command (not safe)
@@ -1632,6 +1759,10 @@ Db.prototype._executeQueryCommand = function(db_command, options, callback) {
   // Get the configuration
   var config = this.serverConfig;
   var read = options.read;
+  // Allow for the usage of the readPreference model
+  if(read == null) {
+    read = options.readPreference;
+  }
 
   if(!connection && !config.canRead(read) && !config.canWrite() && config.isAutoReconnect()) {
     if(read == ReadPreference.PRIMARY 
@@ -1662,6 +1793,11 @@ Db.prototype._executeQueryCommand = function(db_command, options, callback) {
         }
       );
     }
+
+    // If we have blown through the number of items let's 
+    if(!self.serverConfig._commandsStore.validateBufferLimit(self.bufferMaxEntries)) {
+      self.close();
+    }    
   } else if(!connection && !config.canRead(read) && !config.canWrite() && !config.isAutoReconnect()) {
     return callback(new Error("no open connections"), null);
   } else {
@@ -1688,6 +1824,11 @@ var __executeInsertCommand = function(self, db_command, options, callback) {
   // Override connection if needed
   connection = specifiedConnection != null ? specifiedConnection : connection;
 
+  // Validate if we can use this server 2.6 wire protocol
+  if(!connection.isCompatible()) {
+    return callback(utils.toError("driver is incompatible with this server version"), null);
+  }
+
   // Ensure we have a valid connection
   if(typeof callback === 'function') {
     // Ensure we have a valid connection
@@ -1697,7 +1838,7 @@ var __executeInsertCommand = function(self, db_command, options, callback) {
       return callback(connection);
     }
 
-    var errorOptions = _getWriteConcern(self, options, callback);
+    var errorOptions = _getWriteConcern(self, options);
     if(errorOptions.w > 0 || errorOptions.w == 'majority' || errorOptions.j || errorOptions.journal || errorOptions.fsync) {      
       // db command is now an array of commands (original command + lastError)
       db_command = [db_command, DbCommand.createGetLastErrorCommand(safe, self)];
@@ -1711,20 +1852,6 @@ var __executeInsertCommand = function(self, db_command, options, callback) {
   if(connection instanceof Error && typeof callback == 'function') return callback(connection, null);
   if(connection instanceof Error) return null;
   if(connection == null && typeof callback == 'function') return callback(new Error("no primary server found"), null);
-
-  // Ensure we truly are connected
-  if(!connection.isConnected()) {
-    return self.serverConfig._commandsStore.write(
-      {   type:'insert'
-        , 'db_command':db_command
-        , 'options':options
-        , 'callback':callback
-        , db: self
-        , executeQueryCommand: __executeQueryCommand
-        , executeInsertCommand: __executeInsertCommand
-      }
-    );
-  }
 
   // Write the message out
   connection.write(db_command, function(err) {
@@ -1742,7 +1869,7 @@ var __executeInsertCommand = function(self, db_command, options, callback) {
       self.emit("error", err);
     }
   });
-}
+};
 
 /**
  * Execute an insert Command
@@ -1792,12 +1919,17 @@ Db.prototype._executeInsertCommand = function(db_command, options, callback) {
         , executeInsertCommand: __executeInsertCommand
       }
     );
+
+    // If we have blown through the number of items let's 
+    if(!self.serverConfig._commandsStore.validateBufferLimit(self.bufferMaxEntries)) {
+      self.close();
+    }        
   } else if(!connection && !config.canWrite() && !config.isAutoReconnect()) {
     return callback(new Error("no open connections"), null);
   } else {
     __executeInsertCommand(self, db_command, options, callback);
   }
-}
+};
 
 /**
  * Update command is the same
@@ -1843,7 +1975,7 @@ Db.DEFAULT_URL = 'mongodb://localhost:27017/default';
  *
  * @param {String} url connection url for MongoDB.
  * @param {Object} [options] optional options for insert command
- * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. While the second parameter will contain the db instance or null if an error occured.
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occurred, or null otherwise. While the second parameter will contain the db instance or null if an error occurred.
  * @return {null}
  * @api public
  */
@@ -1864,7 +1996,7 @@ Db.connect = function(url, options, callback) {
   var MongoClient = require('./mongo_client.js').MongoClient;
   // Attempt to connect
   MongoClient.connect.call(MongoClient, url, options, callback);
-}
+};
 
 /**
  * State of the db connection
@@ -1886,7 +2018,7 @@ var _hasWriteConcern = function(errorOptions) {
     || errorOptions.j == true
     || errorOptions.journal == true
     || errorOptions.fsync == true
-}
+};
 
 /**
  * @ignore
@@ -1899,7 +2031,7 @@ var _setWriteConcernHash = function(options) {
   if(options.fsync == true) finalOptions.fsync = options.fsync;
   if(options.wtimeout != null) finalOptions.wtimeout = options.wtimeout;  
   return finalOptions;
-}
+};
 
 /**
  * @ignore
@@ -1924,11 +2056,11 @@ var _getWriteConcern = function(self, options, callback) {
 
   // Ensure we don't have an invalid combination of write concerns
   if(finalOptions.w < 1 
-    && (finalOptions.journal == true || finalOptions.j == true || finalOptions.fsync == true)) throw new Error("No acknowlegement using w < 1 cannot be combined with journal:true or fsync:true");
+    && (finalOptions.journal == true || finalOptions.j == true || finalOptions.fsync == true)) throw new Error("No acknowledgement using w < 1 cannot be combined with journal:true or fsync:true");
 
   // Return the options
   return finalOptions;
-}
+};
 
 /**
  * Legacy support
@@ -1951,4 +2083,4 @@ Db.prototype.removeAllEventListeners = function() {
   this.removeAllListeners("parseError");
   this.removeAllListeners("poolReady");
   this.removeAllListeners("message");
-}
+};

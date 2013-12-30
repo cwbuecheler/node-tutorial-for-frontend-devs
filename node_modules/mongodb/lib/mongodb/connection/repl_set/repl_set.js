@@ -12,16 +12,16 @@ var ReadPreference = require('../read_preference').ReadPreference
   , HighAvailabilityProcess = require('./ha').HighAvailabilityProcess
   , Base = require('../base').Base;
 
-const STATE_STARTING_PHASE_1 = 0;
-const STATE_PRIMARY = 1;
-const STATE_SECONDARY = 2;
-const STATE_RECOVERING = 3;
-const STATE_FATAL_ERROR = 4;
-const STATE_STARTING_PHASE_2 = 5;
-const STATE_UNKNOWN = 6;
-const STATE_ARBITER = 7;
-const STATE_DOWN = 8;
-const STATE_ROLLBACK = 9;
+var STATE_STARTING_PHASE_1 = 0;
+var STATE_PRIMARY = 1;
+var STATE_SECONDARY = 2;
+var STATE_RECOVERING = 3;
+var STATE_FATAL_ERROR = 4;
+var STATE_STARTING_PHASE_2 = 5;
+var STATE_UNKNOWN = 6;
+var STATE_ARBITER = 7;
+var STATE_DOWN = 8;
+var STATE_ROLLBACK = 9;
 
 // Set processor, setImmediate if 0.10 otherwise nextTick
 var processor = require('../../utils').processor();
@@ -80,7 +80,6 @@ var ReplSet = exports.ReplSet = function(servers, options) {
   // Add high availability process
   this._haProcess = new HighAvailabilityProcess(this, this.options);
 
-
   // Let's iterate over all the provided server objects and decorate them
   this.servers = this.options.decorateAndClean(servers, this._callBackStore);
   // Throw error if no seed servers
@@ -99,7 +98,7 @@ var ReplSet = exports.ReplSet = function(servers, options) {
 
   this.emitOpen = this.options.emitOpen || true;
   // Set up a clean state
-  this._state = new ReplSetState();
+  this._state = new ReplSetState(this);
   // Current round robin selected server
   this._currentServerChoice = 0;
   // Ensure up the server callbacks
@@ -110,6 +109,10 @@ var ReplSet = exports.ReplSet = function(servers, options) {
     this.servers[i].options.auto_reconnect = false;
     this.servers[i].inheritReplSetOptionsFrom(this);
   }
+
+  // Allow setting the socketTimeoutMS on all connections
+  // to work around issues such as secondaries blocking due to compaction
+  utils.setSocketTimeoutProperty(this, this.options.socketOptions);
 }
 
 /**
@@ -236,12 +239,15 @@ ReplSet.prototype.close = function(callback) {
   }
 
   // Clean out the state
-  this._state = new ReplSetState(); 
+  this._state = new ReplSetState(this); 
   
   // Emit close event
   processor(function() {
     self._emitAcrossAllDbInstances(self, null, "close", null, null, true)    
   });
+
+  // Flush out any remaining call handlers
+  self._flushAllCallHandlers(utils.toError("Connection Closed By Application"));
 
   // Callback
   if(typeof callback == 'function') 
@@ -304,7 +310,10 @@ var _handler = function(event, self, server) {
   return function(err, doc) {
     // The event happened to a primary
     // Remove it from play
-    if(self._state.isPrimary(server)) {
+    if(self._state.isPrimary(server)) {    
+      // Emit that the primary left the replicaset
+      self.emit('left', 'primary', server);
+      // Get the current master
       var current_master = self._state.master;
       self._state.master = null;
       self._serverState = ReplSet.REPLSET_READ_ONLY;
@@ -318,6 +327,9 @@ var _handler = function(event, self, server) {
         self.__executeAllServerSpecificErrorCallbacks(host, port, err);        
       }
     } else if(self._state.isSecondary(server)) {
+      // Emit that a secondary left the replicaset
+      self.emit('left', 'secondary', server);
+      // Delete from the list
       delete self._state.secondaries[server.name];
     }
 
