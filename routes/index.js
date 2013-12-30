@@ -22,7 +22,7 @@ exports.userlist = function(db) {
 		var collection = db.get('usercollection');
 		collection.find({},{},function(e,docs){
 			res.render('userlist', {
-				"userlist" : docs
+				'userlist' : docs
 			});
 		});
 	};
@@ -41,7 +41,7 @@ exports.newuser = function(req, res){
 exports.adduser = function(db) {
 	return function(req, res) {
 
-		// Get our form values. These rely on the "name" attributes
+		// Get our form values. These rely on the 'name' attributes
 		var userName = req.body.username;
 		var userEmail = req.body.useremail;
 
@@ -50,18 +50,18 @@ exports.adduser = function(db) {
 
 		// Submit to the DB
 		collection.insert({
-			"username" : userName,
-			"email" : userEmail
+			'username' : userName,
+			'email' : userEmail
 		}, function (err, doc) {
 			if (err) {
 				// If it failed, return error
-				res.send("There was a problem adding the information to the database.");
+				res.send('There was a problem adding the information to the database.');
 			}
 			else {
 				// If it worked, set the header so the address bar doesn't still say /adduser
-				res.location("userlist");
-				// And forward to success page 
-				res.redirect("userlist");
+				res.location('userlist');
+				// And forward to success page
+				res.redirect('userlist');
 			}
 		});
 
