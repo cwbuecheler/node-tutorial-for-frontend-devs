@@ -4,29 +4,22 @@ A tutorial and complete sample project for Front-End developers showing how to g
 
 ## Quickstart
 
-Double-click the Tutorial file (node_tutorial.html) and follow the instructions! Or you can [visit it online](http://cwbuecheler.com/web/tutorials/2013/node-express-mongo/). The rest of the project is provided just to show the functioning finished results. The tutorial will show you how to build all of this stuff, from downloading Node all the way to the end.
+[Visit the tutorial online](http://cwbuecheler.com/web/tutorials/2013/node-express-mongo/). The rest of the project is provided just to show the functioning finished results. The tutorial will show you how to build all of this stuff, from downloading Node all the way to the end.
+
+If you want to run this example code, you will need to do an NPM Install, as the node_modules directory has been removed from this repository.
 
 
 ## Author
 
-Christopher Buecheler is a front-end developer for a small San Francisco startup. Previously he's worked for companies like GameSpy,
-OkCupid, Crispy Gamer, and Comcast. You can visit him at [his website](http://cwbuecheler.com).
+Christopher Buecheler is a front-end developer for a small San Francisco startup. Previously he's worked for companies like GameSpy, OkCupid, Crispy Gamer, and Comcast. You can visit him at [his website](http://cwbuecheler.com).
 
 
 ## Contents
 
-* /node_modules - all dependencies for tutorial
 * /public - static directories suchs as /images
 * /routes - route files for tutorial project
 * /views - views for tutorial project
 * README.md - this file
 * app.js - central app file for tutorial project
-* browsershot1.png - image for tutorial
-* browsershot2.png - image for tutorial
-* browsershot3.png - image for tutorial
-* browsershot4.png - image for tutorial
-* browsershot5.png - image for tutorial
-* browsershot6.png - image for tutorial
-* node_tutorial.html - the tutorial
 * package.json - package info for tutorial project
 * prettify.css - helps make the code snippets purdy
