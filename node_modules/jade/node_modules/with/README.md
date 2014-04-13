@@ -16,15 +16,23 @@ Compile time `with` for strict mode JavaScript
 var addWith = require('with')
 
 addWith('obj', 'console.log(a)')
-// => "var a = obj.a;console.log(a)"
+// => ';(function (console, a) {
+//       console.log(a)
+//     }("console" in obj ? obj.console :
+//                          typeof console!=="undefined" ? console : undefined,
+//       "a" in obj ? obj.a :
+//                    typeof a !== "undefined" ? a : undefined));'
 
-addWith("obj || {}", "console.log(helper(a))", ["helper"])
-// => var locals = (obj || {}),a = locals.a;console.log(helper(a))
+addWith('obj', 'console.log(a)', ['console'])
+// => ';(function (console, a) {
+//       console.log(a)
+//     }("a" in obj ? obj.a :
+//                    typeof a !== "undefined" ? a : undefined));'
 ```
 
 ## API
 
-### addWith(obj, src, [exclude], [environments])
+### addWith(obj, src[, exclude])
 
 The idea is that this is roughly equivallent to:
 
@@ -34,13 +42,23 @@ with (obj) {
 }
 ```
 
-There are a few differences though.  For starters, it will be assumed that all variables used in `src` come from `obj` so any that don't (e.g. template helpers) need to have their names parsed to `exclude` as an array.  If you want to have browser globals available you can pass a collection of `environments`, e.g.
+There are a few differences though.  For starters, assignments to variables will always remain contained within the with block.
+
+e.g.
 
 ```js
-addWith('obj', 'document.createElement(foo)', [], ['reservedVars', 'ecmaIdentifiers', 'nonstandard', 'browser'])
-```
+var foo = 'foo'
+with ({}) {
+  foo = 'bar'
+}
+assert(foo === 'bar')// => This fails for compile time with but passes for native with
 
-The default environment is: `['reservedVars', 'ecmaIdentifiers', 'nonstandard', 'node']`
+var obj = {foo: 'foo'}
+with ({}) {
+  foo = 'bar'
+}
+assert(obj.foo === 'bar')// => This fails for compile time with but passes for native with
+```
 
 It also makes everything be declared, so you can always do:
 
@@ -53,6 +71,8 @@ instead of
 ```js
 if (typeof foo === 'undefined')
 ```
+
+This is not the case if foo is in `exclude`.  If a variable is excluded, we ignore it entirely.  This is useful if you know a variable will be global as it can lead to efficiency improvements.
 
 It is also safe to use in strict mode (unlike `with`) and it minifies properly (`with` disables virtually all minification).
 

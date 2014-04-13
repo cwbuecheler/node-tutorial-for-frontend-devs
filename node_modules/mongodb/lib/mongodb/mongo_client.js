@@ -13,8 +13,8 @@ var Db = require('./db').Db
  * Options
  *  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowlegement of write and w >= 1, w = 'majority' or tag acknowledges the write
  *  - **wtimeout**, {Number, 0} set the timeout for waiting for write concern to finish (combines with w option)
- *  - **fsync**, (Boolean, default:false) write waits for fsync before returning
- *  - **journal**, (Boolean, default:false) write waits for journal sync before returning
+ *  - **fsync**, (Boolean, default:false) write waits for fsync before returning, from MongoDB 2.6 on, fsync cannot be combined with journal
+ *  - **j**, (Boolean, default:false) write waits for journal sync before returning
  *  - **readPreference** {String}, the prefered read preference (ReadPreference.PRIMARY, ReadPreference.PRIMARY_PREFERRED, ReadPreference.SECONDARY, ReadPreference.SECONDARY_PREFERRED, ReadPreference.NEAREST).
  *  - **native_parser** {Boolean, default:false}, use c++ bson parser.
  *  - **forceServerObjectId** {Boolean, default:false}, force server to create _id fields instead of client.
@@ -25,9 +25,6 @@ var Db = require('./db').Db
  *  - **retryMiliSeconds** {Number, default:5000}, number of miliseconds between retries.
  *  - **numberOfRetries** {Number, default:5}, number of retries off connection.
  *  - **bufferMaxEntries** {Boolean, default: -1}, sets a cap on how many operations the driver will buffer up before giving up on getting a working connection, default is -1 which is unlimited
- * 
- * Deprecated Options 
- *  - **safe** {true | {w:n, wtimeout:n} | {fsync:true}, default:false}, executes with a getLastError command returning the results of the command on MongoDB.
  *
  * @class Represents a MongoClient
  * @param {Object} serverConfig server config object.
@@ -243,7 +240,7 @@ MongoClient.connect = function(url, options, callback) {
 
     var connectFunction = function(__server) { 
       // Attempt connect
-      new Db(object.dbName, __server, {safe:false, native_parser:false}).open(function(err, db) {
+      new Db(object.dbName, __server, {w:1, native_parser:false}).open(function(err, db) {
         // Update number of servers
         totalNumberOfServers = totalNumberOfServers - 1;          
         // If no error do the correct checks
@@ -417,7 +414,7 @@ var _finishConnecting = function(serverConfig, object, options, callback) {
           if(db) db.close();
           process.nextTick(function() {
             try {
-              callback(err ? err : new Error('Could not authenticate user ' + auth[0]), null);
+              callback(err ? err : new Error('Could not authenticate user ' + object.auth[0]), null);
             } catch (err) {
               if(db) db.close();
               throw err

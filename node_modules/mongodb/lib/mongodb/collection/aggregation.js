@@ -81,7 +81,7 @@ var mapReduce = function mapReduce (map, reduce, options, callback) {
   var self = this;
   var cmd = DbCommand.createDbCommand(this.db, mapCommandHash);
 
-  this.db._executeQueryCommand(cmd, {read:readPreference}, function (err, result) {
+  this.db._executeQueryCommand(cmd, {readPreference:readPreference}, function (err, result) {
     if(err) return callback(err);
     if(!result || !result.documents || result.documents.length == 0)
       return callback(Error("command failed to return results"), null)
@@ -221,16 +221,13 @@ var group = function group(keys, condition, initial, reduce, finalize, command, 
       selector.group.key = hash;
     }
 
-    var cmd = DbCommand.createDbSlaveOkCommand(this.db, selector);
     // Set read preference if we set one
     var readPreference = shared._getReadConcern(this, options);
-    // Execute the command
-    this.db._executeQueryCommand(cmd
-      , {read:readPreference}
-      , utils.handleSingleCommandResultReturn(null, null, function(err, result) {
-        if(err) return callback(err, null);
-        callback(null, result.retval);
-      }));
+    // Execute command
+    this.db.command(selector, {readPreference: readPreference}, function(err, result) {
+      if(err) return callback(err, null);
+      callback(null, result.retval);
+    });
   } else {
     // Create execution scope
     var scope = reduce != null && reduce instanceof Code
@@ -263,7 +260,7 @@ var aggregate = function(pipeline, options, callback) {
     || opts.explain 
     || opts.cursor 
     || opts.out
-    || opts.allowDiskUsage ? args.pop() : {}
+    || opts.allowDiskUse ? args.pop() : {}
   // If the callback is the option (as for cursor override it)
   if(typeof callback == 'object' && callback != null) options = callback;
 
@@ -279,7 +276,7 @@ var aggregate = function(pipeline, options, callback) {
     // Set the aggregation cursor options
     var agg_cursor_options = options.cursor;
     agg_cursor_options.pipe = pipeline;
-    agg_cursor_options.allowDiskUsage = options.allowDiskUsage == null ? false : options.allowDiskUsage;
+    agg_cursor_options.allowDiskUse = options.allowDiskUse == null ? false : options.allowDiskUse;
     // Return the aggregation cursor
     return new AggregationCursor(this, this.serverCapabilities, agg_cursor_options);
   }
@@ -291,8 +288,8 @@ var aggregate = function(pipeline, options, callback) {
 
   // Build the command
   var command = { aggregate : this.collectionName, pipeline : pipeline};
-  // If we have allowDiskUsage defined
-  if(options.allowDiskUsage) command.allowDiskUsage = options.allowDiskUsage;
+  // If we have allowDiskUse defined
+  if(options.allowDiskUse) command.allowDiskUse = options.allowDiskUse;
 
   // Ensure we have the right read preference inheritance
   options.readPreference = shared._getReadConcern(this, options);

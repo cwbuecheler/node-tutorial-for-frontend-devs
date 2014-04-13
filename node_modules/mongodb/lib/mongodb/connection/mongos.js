@@ -121,6 +121,12 @@ Mongos.prototype.connect = function(db, options, callback) {
 
       // We are done connecting
       if(self._numberOfServersLeftToInitialize == 0) {
+        // If we have no valid mongos server instances error out
+        if(Object.keys(self.upServers).length == 0) {
+          // return self.emit("connectionError", new Error("No valid mongos instances found"));
+          return callback(new Error("No valid mongos instances found"), null);
+        }
+
         // Start ha function if it exists
         if(self.haEnabled) {
           // Setup the ha process
@@ -223,6 +229,12 @@ Mongos.prototype.connect = function(db, options, callback) {
                   var endTime = new Date().getTime();
                   // Mark the server with the ping time
                   _server.runtimeStats['pingMs'] = endTime - startTime;
+
+                  // If we have any buffered commands let's signal reconnect event
+                  if(self._commandsStore.count() > 0) {
+                    self.emit('reconnect');
+                  }
+
                   // Execute any waiting reads
                   self._commandsStore.execute_writes();   
                   self._commandsStore.execute_queries();   
@@ -311,6 +323,11 @@ Mongos.prototype.connect = function(db, options, callback) {
                     add_server(self, _server);
                   }
 
+                  // If we have any buffered commands let's signal reconnect event
+                  if(self._commandsStore.count() > 0) {
+                    self.emit('reconnect');
+                  }
+
                   // Execute any waiting reads
                   self._commandsStore.execute_writes();   
                   self._commandsStore.execute_queries();                  
@@ -325,6 +342,12 @@ Mongos.prototype.connect = function(db, options, callback) {
             // Set ha done
             if(numberOfServersLeft == 0) {
               self._haInProgress = false;
+
+              // If we have any buffered commands let's signal reconnect event
+              if(self._commandsStore.count() > 0) {
+                self.emit('reconnect');
+              }
+
               // Execute any waiting reads
               self._commandsStore.execute_writes();   
               self._commandsStore.execute_queries();   
@@ -463,9 +486,7 @@ Mongos.prototype.isDestroyed = function() {
 Mongos.prototype.checkoutWriter = function() {
   // Checkout a writer
   var keys = Object.keys(this.upServers);
-  // console.dir("============================ checkoutWriter :: " + keys.length)
   if(keys.length == 0) return null;
-  // console.log("=============== checkoutWriter :: " + this.upServers[keys[0]].checkoutWriter().socketOptions.port)
   return this.upServers[keys[0]].checkoutWriter();
 }
 
@@ -473,7 +494,6 @@ Mongos.prototype.checkoutWriter = function() {
  * @ignore
  */
 Mongos.prototype.checkoutReader = function(read) {
-  // console.log("=============== checkoutReader :: read :: " + read);
   // If read is set to null default to primary
   read = read || 'primary'
   // If we have a read preference object unpack it
@@ -487,8 +507,6 @@ Mongos.prototype.checkoutReader = function(read) {
   // Checkout a writer
   var keys = Object.keys(this.upServers);
   if(keys.length == 0) return null;
-  // console.log("=============== checkoutReader :: " + this.upServers[keys[0]].checkoutWriter().socketOptions.port)
-  // console.dir(this._commandsStore.commands)
   return this.upServers[keys[0]].checkoutWriter();
 }
 
@@ -512,6 +530,11 @@ Mongos.prototype.close = function(callback) {
 
   // Flush out any remaining call handlers
   self._flushAllCallHandlers(utils.toError("Connection Closed By Application"));
+
+  // No up servers just return
+  if(Object.keys(this.upServers) == 0) {
+    return callback(null);
+  }
 
   // Close all the up servers
   for(var name in this.upServers) {

@@ -208,6 +208,19 @@ That's handy. You'll see a bunch of text in your command prompt, mostly a lot
 of http 304's and GETs. That's fine. Express is now installed and available.
 </p>
 
+<p>
+<strong>New:</strong> as of Express 4.0, you'll need to install the express "generator" as well. This is following a trend in the node industry of breaking out core functionality from site-scaffolding utility (check out <a href="http://yeoman.io/" title"The Web's Scaffolding Tool for Modern Webapps" targe="_blank">Yeoman</a> sometime if you want to learn a whole lot more about scaffolding options out there). Installing the generator is very easy: in the same console you used to install Express globally, type the following:
+</p>
+
+<h5>Command C:\node></h5>
+<pre class="prettyprint">
+C:\node>npm install -g express-generator
+</pre>
+
+<p>
+The generator should auto-install, and since it (like all packages installed with -g) lives in your master NPM installation directory, it should already be available in your system path. So let's use our generator to create the scaffolding for a website.
+</p>
+
 <h4>Step 3 &ndash; Create an Express Project</h4>
 
 <p>
@@ -238,23 +251,26 @@ C:\node>express --sessions nodetest1
     create : nodetest1
     create : nodetest1/package.json
     create : nodetest1/app.js
+    create : nodetest1/public
+    create : nodetest1/public/javascripts
+    create : nodetest1/public/images
     create : nodetest1/routes
     create : nodetest1/routes/index.js
-    create : nodetest1/routes/user.js
-    create : nodetest1/views
-    create : nodetest1/views/layout.jade
-    create : nodetest1/views/index.jade
-    create : nodetest1/public/images
-    create : nodetest1/public/javascripts
-    create : nodetest1/public
+    create : nodetest1/routes/users.js
     create : nodetest1/public/stylesheets
     create : nodetest1/public/stylesheets/style.css
+    create : nodetest1/views
+    create : nodetest1/views/index.jade
+    create : nodetest1/views/layout.jade
+    create : nodetest1/views/error.jade
+    create : nodetest1/bin
+    create : nodetest1/bin/www
 
     install dependencies:
-        $ cd nodetest1 && npm install
+     $ cd nodetest1 && npm install
 
     run the app:
-        $ node app
+     $ DEBUG=my-application ./bin/www
 </pre>
 
 <h4>Step 4 &ndash; Edit Dependencies</h4>
@@ -269,16 +285,21 @@ C:\node>express --sessions nodetest1
 <h5>C:\node\nodetest1\package.json</h5>
 <pre class="prettyprint">
 {
-    "name": "application-name",
-    "version": "0.0.1",
-    "private": true,
-    "scripts": {
-        "start": "node app.js"
-    },
-    "dependencies": {
-        "express": "3.4.4",
-        "jade": "*"
-    }
+  "name": "application-name",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "start": "node ./bin/www"
+  },
+  "dependencies": {
+    "express": "~4.0.0",
+    "static-favicon": "~1.0.0",
+    "morgan": "~1.0.0",
+    "cookie-parser": "~1.0.1",
+    "body-parser": "~1.0.0",
+    "debug": "~0.7.4",
+    "jade": "~1.3.0"
+  }
 }
 </pre>
 

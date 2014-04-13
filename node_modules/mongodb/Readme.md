@@ -9,7 +9,7 @@
 
 ### Bugs / Feature Requests
 
-Think you’ve found a bug? Want to see a new feature in PyMongo? Please open a
+Think you’ve found a bug? Want to see a new feature in node-mongodb-native? Please open a
 case in our issue management tool, JIRA:
 
 - Create an account and login <https://jira.mongodb.org>.
@@ -164,7 +164,7 @@ Simple example below
     return new ObjectID("aaaaaaaaaaaa");
   }
 
-  MongoClient.connect('mongodb://127.0.0.1:27017/test', function(err, db) {
+  MongoClient.connect('mongodb://127.0.0.1:27017/test', {'pkFactory':CustomPKFactory}, function(err, db) {
     if(err) throw err;
 
     db.dropDatabase(function(err, done) {

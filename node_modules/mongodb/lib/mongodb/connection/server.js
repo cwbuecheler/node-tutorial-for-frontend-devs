@@ -18,7 +18,6 @@ var processor = require('../utils').processor();
  * Class representing a single MongoDB Server connection
  *
  * Options
- *  - **readPreference** {String, default:null}, set's the read preference (ReadPreference.PRIMARY, ReadPreference.PRIMARY_PREFERRED, ReadPreference.SECONDARY, ReadPreference.SECONDARY_PREFERRED, ReadPreference.NEAREST)
  *  - **ssl** {Boolean, default:false}, use ssl connection (needs to have a mongod server with ssl support)
  *  - **sslValidate** {Boolean, default:false}, validate mongod server certificate against ca (needs to have a mongod server with ssl support, 2.4 or higher)
  *  - **sslCA** {Array, default:null}, Array of valid certificates either as Buffers or Strings (needs to have a mongod server with ssl support, 2.4 or higher)
@@ -83,23 +82,6 @@ function Server(host, port, options) {
   // Ensure we are not trying to validate with no list of certificates
   if(this.sslValidate && (!Array.isArray(this.sslCA) || this.sslCA.length == 0)) {
     throw new Error("The driver expects an Array of CA certificates in the sslCA parameter when enabling sslValidate");
-  }
-
-  // Get the readPreference
-  var readPreference = this.options['readPreference'];
-  // If readPreference is an object get the mode string
-  var validateReadPreference = readPreference != null && typeof readPreference == 'object' ? readPreference.mode : readPreference;
-  // Read preference setting
-  if(validateReadPreference != null) {
-    if(validateReadPreference != ReadPreference.PRIMARY && validateReadPreference != ReadPreference.SECONDARY && validateReadPreference != ReadPreference.NEAREST
-      && validateReadPreference != ReadPreference.SECONDARY_PREFERRED && validateReadPreference != ReadPreference.PRIMARY_PREFERRED) {
-        throw new Error("Illegal readPreference mode specified, " + validateReadPreference);
-    }
-
-    // Set read Preference
-    this._readPreference = readPreference;
-  } else {
-    this._readPreference = null;
   }
 
   // Contains the isMaster information returned from the server
@@ -371,6 +353,7 @@ Server.prototype.connect = function(dbInstance, options, callback) {
       _server.master = reply.documents[0].ismaster == 1 ? true : false;
       _server.connectionPool.setMaxBsonSize(reply.documents[0].maxBsonObjectSize);
       _server.connectionPool.setMaxMessageSizeBytes(reply.documents[0].maxMessageSizeBytes);
+      _server.connectionPool.setMaxWriteBatchSize(reply.documents[0].maxWriteBatchSize);
       // Set server state to connEcted
       _server._serverState = 'connected';
       // Set server as connected
@@ -658,6 +641,13 @@ Server.prototype.connect = function(dbInstance, options, callback) {
           self._apply_auths(server.db, function(err, result) {            
             server._serverState = 'connected';
             server._reconnectInProgreess = false;
+
+            // If we have any buffered commands let's signal reconnect event
+            if(server._commandsStore.count() > 0) {
+              server.emit('reconnect');
+            }
+
+            // Execute any buffered reads and writes
             server._commandsStore.execute_queries();
             server._commandsStore.execute_writes();
           });
@@ -731,6 +721,8 @@ var canCheckoutWriter = function(self, read) {
  * @ignore
  */
 Server.prototype.checkoutWriter = function(read) {
+  if(this._serverState == 'disconnected' || this._serverState == 'destroyed')
+    return null;
   if(read == true) return this.connectionPool.checkoutConnection();
   // Check if are allowed to do a checkout (if we try to use an arbiter f.ex)
   var result = canCheckoutWriter(this, read);
@@ -754,7 +746,7 @@ Server.prototype.checkoutWriter = function(read) {
  */
 var canCheckoutReader = function(self) {
   // We cannot write to an arbiter or secondary server
-  if(self.isMasterDoc && self.isMasterDoc['arbiterOnly'] == true) {
+  if(self.isMasterDoc && self.isMasterDoc['arbiterOnly'] == true && self.isSetMember()) {
     return new Error("Cannot write to an arbiter");
   } else if(self._readPreference != null) {
     // If the read preference is Primary and the instance is not a master return an error
@@ -775,6 +767,8 @@ var canCheckoutReader = function(self) {
  * @ignore
  */
 Server.prototype.checkoutReader = function(read) {
+  if(this._serverState == 'disconnected' || this._serverState == 'destroyed')
+    return null;
   // Check if are allowed to do a checkout (if we try to use an arbiter f.ex)
   var result = canCheckoutReader(this);
   // If the result is null check out a writer

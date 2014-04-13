@@ -17,7 +17,9 @@ var InsertCommand = require('./commands/insert_command').InsertCommand
   , index = require('./collection/index')
   , geo = require('./collection/geo')
   , commands = require('./collection/commands')
-  , aggregation = require('./collection/aggregation');
+  , aggregation = require('./collection/aggregation')
+  , unordered = require('./collection/batch/unordered')
+  , ordered = require('./collection/batch/ordered');
 
 /**
  * Create a new Collection instance (INTERNAL TYPE, do not instantiate directly)
@@ -67,15 +69,12 @@ function Collection (db, collectionName, pkFactory, options) {
  * Options
  *  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowlegement of write and w >= 1, w = 'majority' or tag acknowledges the write
  *  - **wtimeout**, {Number, 0} set the timeout for waiting for write concern to finish (combines with w option)
- *  - **fsync**, (Boolean, default:false) write waits for fsync before returning
- *  - **journal**, (Boolean, default:false) write waits for journal sync before returning
+ *  - **fsync**, (Boolean, default:false) write waits for fsync before returning, from MongoDB 2.6 on, fsync cannot be combined with journal
+ *  - **j**, (Boolean, default:false) write waits for journal sync before returning
  *  - **continueOnError/keepGoing** {Boolean, default:false}, keep inserting documents even if one document has an error, *mongodb 1.9.1 >*.
  *  - **serializeFunctions** {Boolean, default:false}, serialize functions on the document.
  *  - **forceServerObjectId** {Boolean, default:false}, let server assign ObjectId instead of the driver
  *  - **checkKeys** {Boolean, default:true}, allows for disabling of document key checking (WARNING OPENS YOU UP TO INJECTION ATTACKS)
- *
- * Deprecated Options
- *  - **safe** {true | {w:n, wtimeout:n} | {fsync:true}, default:false}, executes with a getLastError command returning the results of the command on MongoDB.
  *
  * @param {Array|Object} docs
  * @param {Object} [options] optional options for insert command
@@ -91,12 +90,9 @@ Collection.prototype.insert = function() { return core.insert; }();
  * Options
  *  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowlegement of write and w >= 1, w = 'majority' or tag acknowledges the write
  *  - **wtimeout**, {Number, 0} set the timeout for waiting for write concern to finish (combines with w option)
- *  - **fsync**, (Boolean, default:false) write waits for fsync before returning
- *  - **journal**, (Boolean, default:false) write waits for journal sync before returning
+ *  - **fsync**, (Boolean, default:false) write waits for fsync before returning, from MongoDB 2.6 on, fsync cannot be combined with journal
+ *  - **j**, (Boolean, default:false) write waits for journal sync before returning
  *  - **single** {Boolean, default:false}, removes the first document found.
- * 
- * Deprecated Options 
- *  - **safe** {true | {w:n, wtimeout:n} | {fsync:true}, default:false}, executes with a getLastError command returning the results of the command on MongoDB.
  *
  * @param {Object} [selector] optional select, no selector is equivalent to removing all documents.
  * @param {Object} [options] additional options during remove.
@@ -127,15 +123,12 @@ Collection.prototype.rename = function() { return commands.rename; }();
  * Options
  *  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowlegement of write and w >= 1, w = 'majority' or tag acknowledges the write
  *  - **wtimeout**, {Number, 0} set the timeout for waiting for write concern to finish (combines with w option)
- *  - **fsync**, (Boolean, default:false) write waits for fsync before returning
- *  - **journal**, (Boolean, default:false) write waits for journal sync before returning
- * 
- * Deprecated Options 
- *  - **safe** {true | {w:n, wtimeout:n} | {fsync:true}, default:false}, executes with a getLastError command returning the results of the command on MongoDB.
+ *  - **fsync**, (Boolean, default:false) write waits for fsync before returning, from MongoDB 2.6 on, fsync cannot be combined with journal
+ *  - **j**, (Boolean, default:false) write waits for journal sync before returning
  *
  * @param {Object} [doc] the document to save
  * @param {Object} [options] additional options during remove.
- * @param {Function} [callback] must be provided if you performing a safe save
+ * @param {Function} [callback] must be provided if you performing an update with a writeconcern
  * @return {null}
  * @api public
  */
@@ -147,15 +140,12 @@ Collection.prototype.save = function() { return core.save; }();
  * Options
  *  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowlegement of write and w >= 1, w = 'majority' or tag acknowledges the write
  *  - **wtimeout**, {Number, 0} set the timeout for waiting for write concern to finish (combines with w option)
- *  - **fsync**, (Boolean, default:false) write waits for fsync before returning
- *  - **journal**, (Boolean, default:false) write waits for journal sync before returning
+ *  - **fsync**, (Boolean, default:false) write waits for fsync before returning, from MongoDB 2.6 on, fsync cannot be combined with journal
+ *  - **j**, (Boolean, default:false) write waits for journal sync before returning
  *  - **upsert** {Boolean, default:false}, perform an upsert operation.
  *  - **multi** {Boolean, default:false}, update all documents matching the selector.
  *  - **serializeFunctions** {Boolean, default:false}, serialize functions on the document.
  *  - **checkKeys** {Boolean, default:true}, allows for disabling of document key checking (WARNING OPENS YOU UP TO INJECTION ATTACKS)
- *
- * Deprecated Options
- *  - **safe** {true | {w:n, wtimeout:n} | {fsync:true}, default:false}, executes with a getLastError command returning the results of the command on MongoDB.
  *
  * @param {Object} selector the query to select the document/documents to be updated
  * @param {Object} document the fields/vals to be updated, or in the case of an upsert operation, inserted.
@@ -214,14 +204,11 @@ Collection.prototype.drop = function drop(callback) {
  * Options
  *  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowlegement of write and w >= 1, w = 'majority' or tag acknowledges the write
  *  - **wtimeout**, {Number, 0} set the timeout for waiting for write concern to finish (combines with w option)
- *  - **fsync**, (Boolean, default:false) write waits for fsync before returning
- *  - **journal**, (Boolean, default:false) write waits for journal sync before returning
+ *  - **fsync**, (Boolean, default:false) write waits for fsync before returning, from MongoDB 2.6 on, fsync cannot be combined with journal
+ *  - **j**, (Boolean, default:false) write waits for journal sync before returning
  *  - **remove** {Boolean, default:false}, set to true to remove the object before returning.
  *  - **upsert** {Boolean, default:false}, perform an upsert operation.
  *  - **new** {Boolean, default:false}, set to true if you want to return the modified object rather than the original. Ignored for remove.
- * 
- * Deprecated Options 
- *  - **safe** {true | {w:n, wtimeout:n} | {fsync:true}, default:false}, executes with a getLastError command returning the results of the command on MongoDB.
  *
  * @param {Object} query query object to locate the object to modify
  * @param {Array}  sort - if multiple docs match, choose the first one in the specified sort order as the object to manipulate
@@ -239,11 +226,8 @@ Collection.prototype.findAndModify = function() { return core.findAndModify; }()
  * Options
  *  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowlegement of write and w >= 1, w = 'majority' or tag acknowledges the write
  *  - **wtimeout**, {Number, 0} set the timeout for waiting for write concern to finish (combines with w option)
- *  - **fsync**, (Boolean, default:false) write waits for fsync before returning
- *  - **journal**, (Boolean, default:false) write waits for journal sync before returning
- * 
- * Deprecated Options 
- *  - **safe** {true | {w:n, wtimeout:n} | {fsync:true}, default:false}, executes with a getLastError command returning the results of the command on MongoDB.
+ *  - **fsync**, (Boolean, default:false) write waits for fsync before returning, from MongoDB 2.6 on, fsync cannot be combined with journal
+ *  - **j**, (Boolean, default:false) write waits for journal sync before returning
  *
  * @param {Object} query query object to locate the object to modify
  * @param {Array}  sort - if multiple docs match, choose the first one in the specified sort order as the object to manipulate
@@ -292,6 +276,7 @@ Collection.prototype.findAndRemove = function() { return core.findAndRemove; }()
  *  - **readPreference** {String}, the preferred read preference, require('mongodb').ReadPreference ((ReadPreference.PRIMARY, ReadPreference.PRIMARY_PREFERRED, ReadPreference.SECONDARY, ReadPreference.SECONDARY_PREFERRED, ReadPreference.NEAREST).
  *  - **numberOfRetries** {Number, default:5}, if using awaidata specifies the number of times to retry on timeout.
  *  - **partial** {Boolean, default:false}, specify if the cursor should return partial results when querying against a sharded system
+ *  - **maxTimeMS** {Number}, number of miliseconds to wait before aborting the query.
  *
  * @param {Object|ObjectID} query query object to locate the object to modify
  * @param {Object} [options] additional options during update.
@@ -333,6 +318,7 @@ Collection.prototype.find = function() { return query.find; }();
  *  - **raw** {Boolean, default:false}, Return all BSON documents as Raw Buffer documents.
  *  - **readPreference** {String}, the preferred read preference, require('mongodb').ReadPreference (ReadPreference.PRIMARY, ReadPreference.PRIMARY_PREFERRED, ReadPreference.SECONDARY, ReadPreference.SECONDARY_PREFERRED, ReadPreference.NEAREST).
  *  - **partial** {Boolean, default:false}, specify if the cursor should return partial results when querying against a sharded system
+ *  - **maxTimeMS** {Number}, number of miliseconds to wait before aborting the query.
  *
  * @param {Object|ObjectID} query query object to locate the object to modify
  * @param {Object} [options] additional options during update.
@@ -348,8 +334,8 @@ Collection.prototype.findOne = function() { return query.findOne; }();
  * Options
  *  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowlegement of write and w >= 1, w = 'majority' or tag acknowledges the write
  *  - **wtimeout**, {Number, 0} set the timeout for waiting for write concern to finish (combines with w option)
- *  - **fsync**, (Boolean, default:false) write waits for fsync before returning
- *  - **journal**, (Boolean, default:false) write waits for journal sync before returning
+ *  - **fsync**, (Boolean, default:false) write waits for fsync before returning, from MongoDB 2.6 on, fsync cannot be combined with journal
+ *  - **j**, (Boolean, default:false) write waits for journal sync before returning
  *  - **unique** {Boolean, default:false}, creates an unique index.
  *  - **sparse** {Boolean, default:false}, creates a sparse index.
  *  - **background** {Boolean, default:false}, creates the index in the background, yielding whenever possible.
@@ -359,9 +345,6 @@ Collection.prototype.findOne = function() { return query.findOne; }();
  *  - **v** {Number}, specify the format version of the indexes.
  *  - **expireAfterSeconds** {Number}, allows you to expire data on indexes applied to a data (MongoDB 2.2 or higher)
  *  - **name** {String}, override the autogenerated index name (useful if the resulting name is larger than 128 bytes)
- * 
- * Deprecated Options 
- *  - **safe** {true | {w:n, wtimeout:n} | {fsync:true}, default:false}, executes with a getLastError command returning the results of the command on MongoDB.
  *
  * @param {Object} fieldOrSpec fieldOrSpec that defines the index.
  * @param {Object} [options] additional options during update.
@@ -377,8 +360,8 @@ Collection.prototype.createIndex = function() { return index.createIndex; }();
  * Options
  *  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowlegement of write and w >= 1, w = 'majority' or tag acknowledges the write
  *  - **wtimeout**, {Number, 0} set the timeout for waiting for write concern to finish (combines with w option)
- *  - **fsync**, (Boolean, default:false) write waits for fsync before returning
- *  - **journal**, (Boolean, default:false) write waits for journal sync before returning
+ *  - **fsync**, (Boolean, default:false) write waits for fsync before returning, from MongoDB 2.6 on, fsync cannot be combined with journal
+ *  - **j**, (Boolean, default:false) write waits for journal sync before returning
  *  - **unique** {Boolean, default:false}, creates an unique index.
  *  - **sparse** {Boolean, default:false}, creates a sparse index.
  *  - **background** {Boolean, default:false}, creates the index in the background, yielding whenever possible.
@@ -388,9 +371,6 @@ Collection.prototype.createIndex = function() { return index.createIndex; }();
  *  - **v** {Number}, specify the format version of the indexes.
  *  - **expireAfterSeconds** {Number}, allows you to expire data on indexes applied to a data (MongoDB 2.2 or higher)
  *  - **name** {String}, override the autogenerated index name (useful if the resulting name is larger than 128 bytes)
- * 
- * Deprecated Options 
- *  - **safe** {true | {w:n, wtimeout:n} | {fsync:true}, default:false}, executes with a getLastError command returning the results of the command on MongoDB.
  *
  * @param {Object} fieldOrSpec fieldOrSpec that defines the index.
  * @param {Object} [options] additional options during update.
@@ -421,8 +401,13 @@ Collection.prototype.indexInformation = function() { return index.indexInformati
  * @return {null}
  * @api public
  */
-Collection.prototype.dropIndex = function dropIndex (name, callback) {
-  this.db.dropIndex(this.collectionName, name, callback);
+Collection.prototype.dropIndex = function dropIndex (name, options, callback) {
+  if(typeof options == 'function') {
+    callback = options;
+    options = {};
+  }  
+  // Execute dropIndex command
+  this.db.dropIndex(this.collectionName, name, options, callback);
 };
 
 /**
@@ -452,8 +437,13 @@ Collection.prototype.dropIndexes = function() { return Collection.prototype.drop
  * @return {null}
  * @api public
 **/
-Collection.prototype.reIndex = function(callback) {
-  this.db.reIndex(this.collectionName, callback);
+Collection.prototype.reIndex = function(options, callback) {
+  if(typeof options == 'function') {
+    callback = options;
+    options = {};
+  }  
+  // Execute reIndex
+  this.db.reIndex(this.collectionName, options, callback);
 }
 
 /**
@@ -583,6 +573,11 @@ Collection.prototype.indexes = function indexes(callback) {
  *
  * Options
  *  - **readPreference** {String}, the preferred read preference, require('mongodb').ReadPreference ((ReadPreference.PRIMARY, ReadPreference.PRIMARY_PREFERRED, ReadPreference.SECONDARY, ReadPreference.SECONDARY_PREFERRED, ReadPreference.NEAREST).
+ *  - **cursor** {Object}, return the query as cursor, on 2.6 > it returns as a real cursor on pre 2.6 it returns as an emulated cursor.
+ *  - **cursor.batchSize** {Number}, the batchSize for the cursor
+ *  - **out** {String}, the collection name to where to write the results from the aggregation (MongoDB 2.6 or higher). Warning any existing collection will be overwritten.
+ *  - **explain** {Boolean, default:false}, explain returns the aggregation execution plan (requires mongodb 2.6 >).
+ *  - **allowDiskUse** {Boolean, default:false}, allowDiskUse lets the server know if it can use disk to store temporary results for the aggregation (requires mongodb 2.6 >).
  *
  * @param {Array} array containing all the aggregation framework commands for the execution.
  * @param {Object} [options] additional options during update.
@@ -605,6 +600,54 @@ Collection.prototype.aggregate = function() { return aggregation.aggregate; }();
  * @api public
  */
 Collection.prototype.stats = function() { return commands.stats; }();
+
+/**
+ * Initiate a Out of order batch write operation. All operations will be buffered into insert/update/remove commands executed out of order.
+ *
+ * Options
+ *  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowlegement of write and w >= 1, w = 'majority' or tag acknowledges the write
+ *  - **wtimeout**, {Number, 0} set the timeout for waiting for write concern to finish (combines with w option)
+ *  - **fsync**, (Boolean, default:false) write waits for fsync before returning, from MongoDB 2.6 on, fsync cannot be combined with journal
+ *  - **j**, (Boolean, default:false) write waits for journal sync before returning
+ *
+ * @param {Objects} [options] options for the initializeUnorderedBatch 
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. The second argument will be a UnorderedBulkOperation object.
+ * @return {UnorderedBulkOperation}
+ * @api public
+ */
+Collection.prototype.initializeUnorderedBulkOp = function() { return unordered.initializeUnorderedBulkOp; }();
+
+/**
+ * Initiate an In order bulk write operation, operations will be serially executed in the order they are added, creating a new operation for each switch in types.
+ *
+ * Options
+ *  - **w**, {Number/String, > -1 || 'majority' || tag name} the write concern for the operation where < 1 is no acknowlegement of write and w >= 1, w = 'majority' or tag acknowledges the write
+ *  - **wtimeout**, {Number, 0} set the timeout for waiting for write concern to finish (combines with w option)
+ *  - **fsync**, (Boolean, default:false) write waits for fsync before returning, from MongoDB 2.6 on, fsync cannot be combined with journal
+ *  - **j**, (Boolean, default:false) write waits for journal sync before returning
+ *
+ * @param {Objects} [options] options for the initializeOrderedBulkOp 
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. The second argument will be a OrderedBulkOperation object.
+ * @return {OrderedBulkOperation}
+ * @api public
+ */
+Collection.prototype.initializeOrderedBulkOp = function() { return ordered.initializeOrderedBulkOp; }();
+
+/**
+ * Return N number of parallel cursors for a collection allowing parallel reading of entire collection. There are
+ * no ordering guarantees for returned results.
+ *
+ * Options
+ *  - **readPreference** {String}, the prefered read preference (ReadPreference.PRIMARY, ReadPreference.PRIMARY_PREFERRED, ReadPreference.SECONDARY, ReadPreference.SECONDARY_PREFERRED, ReadPreference.NEAREST).
+ *  - **batchSize** {Number, default:0}, set the batchSize for the getMoreCommand when iterating over the query results.
+ *  - **numCursors**, {Number, 1} the maximum number of parallel command cursors to return (the number of returned cursors will be in the range 1:numCursors)
+ *
+ * @param {Objects} [options] options for the initializeOrderedBulkOp 
+ * @param {Function} callback this will be called after executing this method. The first parameter will contain the Error object if an error occured, or null otherwise. The second argument will be an array of CommandCursor instances.
+ * @return {OrderedBulkOperation}
+ * @api public
+ */
+Collection.prototype.parallelCollectionScan = function() { return query.parallelCollectionScan; }();
 
 /**
  * @ignore
