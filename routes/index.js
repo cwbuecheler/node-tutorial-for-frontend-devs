@@ -35,8 +35,9 @@ router.post('/adduser', function(req, res) {
     // Get our form values. These rely on the "name" attributes
     var userName = req.body.username;
     var userEmail = req.body.useremail;
-    var id = Math.floor(Date.now() / 1000);
-    var newUser = { id: id, username: userName, email: userEmail }
+
+    // We're not populating ID here because it should be auto-incrementing
+    var newUser = { username: userName, email: userEmail }
 
     // Submit to the DB
     connection.query('INSERT INTO usercollection SET ?', newUser, function (error, results, fields) {
@@ -51,7 +52,6 @@ router.post('/adduser', function(req, res) {
             res.redirect("userlist");
         }
     });
-
 });
 
 module.exports = router;
