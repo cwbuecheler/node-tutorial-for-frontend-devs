@@ -13,11 +13,10 @@ router.get('/helloworld', function(req, res) {
 
 /* GET Userlist page. */
 router.get('/userlist', function(req, res) {
-    var db = req.db;
-    var collection = db.get('usercollection');
-    collection.find({},{},function(e,docs){
+    var connection = req.db;
+    connection.query('SELECT * FROM usercollection', function(err, rows, fields) {
         res.render('userlist', {
-            "userlist" : docs
+            "userlist" : rows,
         });
     });
 });
@@ -31,21 +30,17 @@ router.get('/newuser', function(req, res) {
 router.post('/adduser', function(req, res) {
 
     // Set our internal DB variable
-    var db = req.db;
+    var connection = req.db;
 
     // Get our form values. These rely on the "name" attributes
     var userName = req.body.username;
     var userEmail = req.body.useremail;
-
-    // Set our collection
-    var collection = db.get('usercollection');
+    var id = Math.floor(Date.now() / 1000);
+    var newUser = { id: id, username: userName, email: userEmail }
 
     // Submit to the DB
-    collection.insert({
-        "username" : userName,
-        "email" : userEmail
-    }, function (err, doc) {
-        if (err) {
+    connection.query('INSERT INTO usercollection SET ?', newUser, function (error, results, fields) {
+        if (error) {
             // If it failed, return error
             res.send("There was a problem adding the information to the database.");
         }
@@ -56,6 +51,7 @@ router.post('/adduser', function(req, res) {
             res.redirect("userlist");
         }
     });
+
 });
 
 module.exports = router;
