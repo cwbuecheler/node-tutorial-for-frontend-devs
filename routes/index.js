@@ -2,21 +2,22 @@ var express = require('express');
 var router = express.Router();
 
 /* GET home page. */
-router.get('/', function(req, res) {
-    res.render('index', { title: 'Express' });
+router.get('/', function(req, res, next) {
+  res.render('index', { title: 'Express' });
 });
 
 /* GET Hello World page. */
 router.get('/helloworld', function(req, res) {
-	res.render('helloworld', { title: 'Hello, World!' })
+    res.render('helloworld', { title: 'Hello, World!' });
 });
 
 /* GET Userlist page. */
 router.get('/userlist', function(req, res) {
-    var connection = req.db;
-    connection.query('SELECT * FROM usercollection', function(err, rows, fields) {
+    var db = req.db;
+    var collection = db.get('usercollection');
+    collection.find({},{},function(e,docs){
         res.render('userlist', {
-            "userlist" : rows,
+            "userlist" : docs
         });
     });
 });
@@ -30,24 +31,25 @@ router.get('/newuser', function(req, res) {
 router.post('/adduser', function(req, res) {
 
     // Set our internal DB variable
-    var connection = req.db;
+    var db = req.db;
 
     // Get our form values. These rely on the "name" attributes
     var userName = req.body.username;
     var userEmail = req.body.useremail;
 
-    // We're not populating ID here because it should be auto-incrementing
-    var newUser = { username: userName, email: userEmail }
+    // Set our collection
+    var collection = db.get('usercollection');
 
     // Submit to the DB
-    connection.query('INSERT INTO usercollection SET ?', newUser, function (error, results, fields) {
-        if (error) {
+    collection.insert({
+        "username" : userName,
+        "email" : userEmail
+    }, function (err, doc) {
+        if (err) {
             // If it failed, return error
             res.send("There was a problem adding the information to the database.");
         }
         else {
-            // If it worked, set the header so the address bar doesn't still say /adduser
-            //res.location("userlist");
             // And forward to success page
             res.redirect("userlist");
         }
