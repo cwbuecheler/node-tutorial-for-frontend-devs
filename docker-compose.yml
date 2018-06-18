@@ -1,0 +1,23 @@
+version: "2"
+services:
+  app:
+    container_name: docker-node-mongotuts-app
+    restart: always
+    build: ./web-app
+    ports:
+      - "3000:3000"
+    volumes: 
+      - ./web-app:/usr/src/app
+      - /usr/src/app/node_modules
+    depends_on:
+      - mongo
+  mongo:
+    container_name: mongo
+    image: mongo
+    ports:
+      - "27017:27017"
+
+  adminmongo:
+    image: "mrvautin/adminmongo"
+    ports:
+      - "1234:1234"
