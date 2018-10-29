@@ -9,7 +9,7 @@ var bodyParser = require('body-parser');
 var mongo = require('mongodb');
 var monk = require('monk');
 var db;
-monk('mongo/nodetest1').then((database) => {
+monk('mongodb://mongo:27017').then((database) => {
     // db is the connected instance of the Manager
     console.log('connected to db!');
     db = database;
