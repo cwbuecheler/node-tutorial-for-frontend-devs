@@ -5,8 +5,13 @@ var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 
 // New Code
-var monk = require('monk');
-var db = monk('localhost:27017/nodetest1');
+var mysql = require('mysql')
+var db = mysql.createConnection({
+  host     : 'localhost',
+  user     : 'administrator',
+  password : 'yourpasswordgoeshere',
+  database : 'nodetest1'
+});
 
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
