@@ -1,3 +1,7 @@
+# Update: this repo is no longer being maintained and I can't guarantee the code will continue to work (although unless major changes happen to Express, it should)
+
+
+
 # The Dead-Simple Step-by-Step Guide for Front-End Developers to Getting Up and Running with Node.JS, Express, Jade, and MongoDB
 
 A tutorial and complete sample project for Front-End developers showing how to get Node, Express and Jade up and running, connected to MongoDB, and reading from / writing to the database.
